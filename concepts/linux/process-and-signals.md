@@ -1,155 +1,201 @@
-# 프로세스와 시그널 = 일하는 직원과 메모
+# 프로세스 모델과 시그널
 
-## 한 마디로
-**프로세스** = 지금 일하고 있는 직원 (사번 = PID).
-**시그널** = OS가 직원에게 보내는 메모/알림 (예: "퇴근해", "설정 다시 읽어").
+## 개요
+Linux의 프로세스는 PID로 식별되는 실행 컨텍스트로, `fork()`로 복제 + `execve()`로 메모리 교체를 통해 생성된다. **시그널**은 OS가 프로세스에 전달하는 비동기 알림 메커니즘으로, 종료·재시작·재구성 등 외부 제어의 기본 수단이며, 일부는 잡을 수 없어 강제 정책 도구로도 쓰인다.
 
-## 왜 알아야 해?
+## 왜 알아야 하나
+- monitor.sh의 health check는 프로세스 식별·상태 분류에 의존
+- B1-2 트러블슈팅(OOM·CPU·deadlock)의 진단은 프로세스 상태 해석
+- 데몬 운영, 서비스 재시작, graceful shutdown 모두 시그널 기반
+- 컨테이너의 PID 1 문제, init system의 reaping 등 모두 이 모델의 응용
 
-- 컴퓨터에서 무엇이 돌고 있는지 파악 (monitor.sh 핵심)
-- 죽은 / 응답 없는 프로세스 식별
-- 정상 종료 vs 강제 종료의 차이 이해
-- B1-2 트러블슈팅의 기본기
-
-## 프로세스 = 일하는 직원
+## 프로세스 = (PID, address space, FDs, credentials, ...)
 
 ```
-회사 (=컴퓨터)
+struct task_struct (커널 내부)
+  ├─ pid, ppid, pgid, sid     식별·세션
+  ├─ uid/gid + supplementary  신원
+  ├─ mm_struct                메모리 매핑 (텍스트, 데이터, 힙, 스택, mmap된 파일)
+  ├─ files_struct             열린 파일 디스크립터 테이블
+  ├─ signal_struct            시그널 핸들러·마스크·pending
+  ├─ state                    R/S/D/Z/T
+  └─ ... (수십 개 더)
+```
+
+PID 1은 init/systemd — 모든 고아 프로세스를 입양해 reap. PID 0은 커널의 idle task (보이지 않음).
+
+## fork-exec 모델
+
+```
+parent
+  ├─ fork()  → 자식 PID 반환 (자식에게는 0 반환)
+  │           ├─ 메모리 copy-on-write (성능 최적화 — write 시점에야 복사)
+  │           ├─ 파일 디스크립터 복제 (close-on-exec 플래그 주의)
+  │           └─ signal 핸들러는 그대로, pending 시그널은 비움
   │
-  ├─ 직원 1번 (PID 1) ─── 회장님 (init/systemd, 모두의 시조)
-  │
-  ├─ 직원 1234번 (PID 1234) ─── 부모: 1, 하는 일: SSH 데몬
-  │
-  ├─ 직원 5678번 (PID 5678) ─── 부모: 1234, 하는 일: agent_app.py
-  │
-  └─ ...
+  child (zero return from fork)
+       └─ execve("/usr/bin/python", argv, envp)
+                ├─ 가상 주소공간 새로 만듦
+                ├─ 환경 변수는 envp[]로 전달
+                └─ PID는 유지, 코드만 교체
 ```
 
-- **PID (사번)** — 모든 직원에게 1부터 부여된 번호
-- **PPID** — 누가 채용했는지 (부모 직원의 사번)
-- 모든 직원은 부모가 있음 (1번만 예외 — 창립자)
+★ Linux는 `fork()` 외에 `clone()`이 진짜 시스템 콜. 스레드(`pthread_create`)도 내부적으로 `clone()` + 공유 플래그 (CLONE_VM, CLONE_FILES 등).
 
-## 어떻게 직원이 늘어나는가: 분신술 (fork-exec)
+★ vfork, posix_spawn은 fork+exec 패턴의 최적화 변형.
+
+## 프로세스 상태
+
+| state | 의미 | 인터럽트 가능 |
+|---|---|---|
+| `R` | runnable (실행 중 또는 큐 대기) | — |
+| `S` | sleeping (시그널로 깰 수 있음) | ✅ |
+| `D` | uninterruptible sleep (보통 디스크 I/O) | ❌ ★ |
+| `Z` | zombie (exit 했지만 부모가 wait() 안 함) | — |
+| `T` | stopped (SIGSTOP/SIGTSTP) | ✅ (SIGCONT) |
+| `I` | idle kernel thread | — |
+
+★ `D` 상태는 SIGKILL로도 못 죽임 — 디스크가 응답할 때까지 대기. 시스템 hang의 주범 중 하나 (NFS 끊김, dying disk).
+
+## 시그널: 비동기 알림
+
+표준 시그널은 1-31번 + realtime 32-64번. 주요:
+
+| # | 이름 | 기본 동작 | 잡기 | 메모 |
+|---|---|---|---|---|
+| 1 | SIGHUP | Term | ✅ | 터미널 종료 / 데몬 reload 관습 |
+| 2 | SIGINT | Term | ✅ | Ctrl+C |
+| 3 | SIGQUIT | Core | ✅ | Ctrl+\, 코어 덤프 생성 |
+| 9 | **SIGKILL** | Term | ❌ | 잡거나 무시 못함, 즉시 종료 |
+| 11 | SIGSEGV | Core | ✅ | 잘못된 메모리 접근 |
+| 13 | SIGPIPE | Term | ✅ | 닫힌 파이프에 write |
+| 15 | **SIGTERM** | Term | ✅ | 정중한 종료 요청 (default) |
+| 17 | SIGCHLD | Ign | ✅ | 자식 상태 변화 (wait()으로 reap) |
+| 19 | SIGSTOP | Stop | ❌ | 프로세스 일시정지, 잡을 수 없음 |
+| 18 | SIGCONT | Cont | ✅ | 정지된 프로세스 재개 |
+
+기본 동작 변경: `signal()` (레거시), `sigaction()` (권장 — POSIX semantics 명시).
+
+### SIGTERM vs SIGKILL — graceful shutdown의 핵심
 
 ```
-부모 직원
-   │
-   ├─ fork()  → "내 분신을 만들어"  (자식 직원 = 부모의 복제)
-   │
-   └─ 자식: exec("python")  → "내 일을 다른 일로 바꿔"
-                              (메모리를 새 프로그램으로 교체)
-```
+SIGTERM (15)
+  → 핸들러로 잡을 수 있음
+  → cleanup 코드 실행 (FD close, lock 해제, state flush)
+  → 프로세스가 명시적 exit() 또는 default Term
 
-→ 셸에서 `python` 치면: 셸이 분신을 만들고, 분신이 python으로 변신.
-→ 환경 변수는 fork 시점에 자식에게 복사됨 (그래서 `export`가 필요).
-
-## 시그널 = 직원에게 보내는 쪽지
-
-| 번호 | 이름 | 의미 | 직원이 무시 가능? |
-|---|---|---|---|
-| 2  | SIGINT  | "Ctrl+C 눌렀어, 멈춰" | ✅ |
-| 9  | **SIGKILL** | "지금 당장 사라져" | ❌ (절대 무시 못함) |
-| 15 | **SIGTERM** | "정리하고 퇴근해" | ✅ (잡아서 처리 가능) |
-| 1  | SIGHUP  | "터미널 끊겼어 / 설정 재읽어" | ✅ |
-
-### SIGTERM vs SIGKILL — 가장 중요
-
-```
-SIGTERM (15): 정중한 부탁
-  → "정리할 시간 줄게. 임시 파일 지우고, 저장하고, 퇴근해"
-  → 직원이 cleanup 코드 실행 가능
-  → 그래도 안 끝나면 그때 SIGKILL
-
-SIGKILL (9): 강제 추방
-  → "지금 당장 나가" — OS가 직원을 잡아 끌어냄
-  → cleanup 코드 절대 실행 못함
-  → 책상 정리 못함 (임시 파일 남음, 저장 안 됨)
+SIGKILL (9)
+  → 커널이 직접 처리, 핸들러 우회
+  → 메모리·FD는 OS가 회수하지만 application-level state 손상 가능
   → "최후의 수단"
 ```
 
-★ `kill -9 PID`가 위험한 이유: **데이터 손상 위험**.
-정석: 먼저 `kill PID` (SIGTERM) → 안 되면 `kill -9`.
+운영 패턴: SIGTERM 후 grace period (보통 30s) → 안 끝나면 SIGKILL. systemd의 `KillMode`/`TimeoutStopSec`, K8s의 `terminationGracePeriodSeconds`가 이 모델.
 
-## 프로세스 상태 (직원의 현재 상태)
+### 좀비와 reaping
 
 ```
-R  Running     일하고 있음 (또는 일할 수 있음)
-S  Sleeping    이벤트 기다리는 중 (idle)
-D  Disk wait   디스크 응답 대기 (보통 잠깐)
-Z  Zombie      ★ 이미 죽었는데 사번 안 반납
-T  Stopped     일시 정지 (Ctrl+Z)
+1. 자식 프로세스 exit() → 자원 대부분 해제
+2. 종료 status는 보존 (struct task_struct에)
+3. 부모가 wait() / waitpid() / SIGCHLD 핸들러로 회수
+4. 회수 후 task_struct 완전 해제
 ```
 
-**좀비**: 자식 직원이 죽었는데 부모가 사망신고 안 함. 사번만 차지.
-**고아**: 부모가 먼저 죽으면 → 회장(PID 1)이 입양 → 정상 처리.
+부모가 회수 안 하면 → **좀비 (Z)** — PID 슬롯만 차지. PID 공간 고갈 위험 (`/proc/sys/kernel/pid_max`).
 
-## 한 번 보자 (Mac에서도 됨)
+부모가 먼저 죽으면 → 자식은 PID 1(init)이 입양 → init은 항상 reap.
+
+★ **컨테이너의 PID 1 문제**: 컨테이너 내 첫 프로세스가 init이 아닌 일반 앱이면, 자식 reap을 안 함 → 좀비 누적. `tini`, `dumb-init` 같은 minimal init 사용.
+
+## 한 번 보자
 
 ```bash
-# 직원 명단
-ps aux                         # 모든 직원 (BSD 스타일)
-ps aux | head                  # 처음 10명만
-ps aux | grep ssh              # 'ssh' 들어간 직원만
+ps -ef                       # System V 스타일
+ps auxf                      # BSD + 프로세스 트리
+ps -eLf                      # 스레드까지 (LWP 컬럼)
+ps -p PID -o stat,wchan,cmd  # state + 무엇 대기 중인지
 
-# ps aux의 컬럼:
-# USER  PID  %CPU  %MEM  ...  COMMAND
-# 누가  사번  CPU   메모리      뭐 하는 중
+pgrep -lf agent_app          # 패턴 매치 + 명령줄
+pidof bash
+pstree -p                    # 프로세스 트리 시각화
 
-# 특정 직원 찾기
-pgrep -f agent_app             # 'agent_app' 들어간 직원의 사번
-pidof bash                     # bash라는 직원의 사번
+# 시그널
+kill PID                     # SIGTERM (default)
+kill -TERM PID               # 동일
+kill -9 PID                  # SIGKILL
+kill -l                      # 시그널 이름·번호 매핑
+killall -SIGUSR1 nginx       # 이름으로
 
-# 메시지 보내기 (★ 자기 컴퓨터에서 함부로 X)
-kill 1234                      # SIGTERM (정리하고 퇴근)
-kill -9 1234                   # SIGKILL (지금 당장)
-kill -HUP 1234                 # SIGHUP (설정 재읽기)
+# 상세 상태
+cat /proc/PID/status         # state, uid/gid, threads, signals
+cat /proc/PID/wchan          # 커널에서 무엇 대기 중인지
+cat /proc/PID/maps           # 가상 메모리 매핑
+ls -l /proc/PID/fd/          # 열린 파일 디스크립터들
+cat /proc/PID/limits         # rlimit 값들
 
-# 실시간 보기
-top                            # 실시간 직원 현황 (q 누르면 종료)
-top -b -n 1                    # 한 번만 출력 (스크립트용)
+# 실시간
+top                          # interactive
+top -b -n 1 -p PID           # 한 번, 특정 PID만
+htop                         # 더 사용자 친화 (별도 설치)
+pidstat -p PID 1             # 1초 간격 통계 (sysstat 패키지)
+
+# 트레이싱
+strace -p PID                # syscall trace (live)
+ltrace -p PID                # library call trace
 ```
 
-## 자주 헷갈리는 것
+## 흔한 함정
 
-- **kill 명령은 죽이는 명령** → 이름은 그렇지만 실제는 **메시지 전송**. 시그널 종류에 따라 다름.
-- **kill -9가 깔끔하다** → ❌ **반대**. 정리 못 해서 더 더러움.
-- **응답 없는 직원 = 좀비** → ❌ 응답 없음 = D 또는 S 상태. 좀비는 "죽었는데 사번 안 반납".
-- **`ps`의 %CPU가 그 순간** → 보통 "시작 후 평균". 순간값은 `top`이 더 정확.
+- **`ps`의 %CPU는 누적 평균** — 시작 후 (사용 시간 / 경과 시간). 순간 부하는 `top` 또는 `pidstat 1`.
+- **PID 재사용** — exit한 PID는 곧 재사용됨. 오래된 PID 캐시 사용 시 다른 프로세스를 죽일 수 있음. `pgrep -f`로 명령줄 함께 검증.
+- **`kill -9`로 인한 데이터 손상** — DB·파일 write 중간이면 일관성 깨짐. SIGTERM → wait → SIGKILL 패턴 준수.
+- **D 상태 프로세스에 SIGKILL 안 통함** — 디스크 응답 대기. NFS·dying disk가 흔한 원인.
+- **시그널 핸들러 안 안전하지 않은 함수 호출** — `printf`, `malloc` 등은 async-signal-safe X. `man 7 signal-safety` 참고.
+- **fork bomb** — `:(){ :|:& };:` 같은 재귀 fork. cgroup의 `pids.max`로 방어.
+- **wait() race** — `SIGCHLD` 핸들러에서 `waitpid(-1, ...)`로 모든 자식 reap (한 번에 여러 SIGCHLD가 합쳐질 수 있음).
+- **`top`의 %CPU가 100% 초과** — 멀티코어에서 단일 프로세스가 N코어 점유 시 N×100%까지 가능 (Irix mode). `Shift+I`로 토글.
+- **double fork 패턴** — 데몬화 시 부모-자식 관계를 init으로 옮기는 전통적 패턴. systemd/`Type=forking`이 이걸 처리.
+- **SIGPIPE 무시** — 파이프라인 중 receiver가 죽으면 sender가 SIGPIPE로 종료. 네트워크 서버는 보통 SIGPIPE를 SIG_IGN으로 + EPIPE 직접 처리.
 
-## 이번 과제(B1-1)에서
+## B1-1 매핑
 
-monitor.sh의 health check 부분:
 ```bash
-# 1. 직원이 살아있나?
-PID=$(pgrep -f agent_app.py)
+# monitor.sh — health check 스니펫
+PID=$(pgrep -f 'agent_app\.py' | head -1)
 if [ -z "$PID" ]; then
-    echo "[ERROR] agent_app.py 없음"
+    log "[ERROR] agent_app.py not running"
     exit 1
 fi
 
-# 2. 그 직원의 CPU/메모리 측정
-ps -p $PID -o %cpu=,%mem= --no-headers
+# 상태 검증
+state=$(ps -o state= -p "$PID")
+case "$state" in
+    [RS])  log "[OK] PID=$PID state=$state" ;;
+    D)     log "[WARN] PID=$PID in uninterruptible sleep" ;;
+    Z)     log "[ERROR] PID=$PID is zombie" ; exit 1 ;;
+    *)     log "[WARN] PID=$PID unexpected state=$state" ;;
+esac
+
+# 자원 측정 (% 누적 — 더 정확한 순간값은 /proc/PID/stat 두 시점 차이)
+ps -p "$PID" -o %cpu=,%mem= --no-headers
 ```
 
-cron이 monitor.sh를 매분 실행 = cron이 분신을 만들어 monitor.sh로 변신시키고, 끝나면 정상 사망신고.
+cron이 monitor.sh 실행 = cron 데몬이 fork → exec /bin/sh → exec monitor.sh. 끝나면 cron이 wait()으로 reap → 좀비 안 생김.
 
-앱 종료가 Ctrl+C라는 건 → SIGINT를 받음 → 앱이 잡아서 정상 종료 처리.
+## 인접 토픽
 
-## 기술 용어 풀이
+- **process group, session, controlling terminal** — `setpgid`, `setsid`, terminal 제어, job control
+- **prctl(2)** — 프로세스 속성 세밀 제어 (PR_SET_NAME, PR_SET_PDEATHSIG, no_new_privs 등)
+- **cgroups (v1/v2)** — 리소스 격리·제한·계측 (CPU, 메모리, IO, PID)
+- **namespace** — PID/network/mount/user/UTS/IPC namespace로 컨테이너 격리
+- **eBPF + tracing** — `bpftrace`, `perf`, `bcc`로 프로세스 동작 관측
+- **systemd** — service unit으로 프로세스 lifecycle 관리 (`Type=`, `KillSignal=`, `Restart=`)
+- **OOM killer** — 메모리 압박 시 OS가 프로세스 골라 SIGKILL (`/proc/PID/oom_score_adj`로 가중치)
 
-- **프로세스(process)** — 실행 중인 프로그램의 한 인스턴스 = 일하는 직원.
-- **PID** — 프로세스 사번 (정수, 1부터).
-- **PPID** — 부모 프로세스의 PID.
-- **fork** — 자기 자신을 복제 (분신술).
-- **exec** — 메모리를 다른 프로그램으로 교체 (변신).
-- **시그널(signal)** — OS가 프로세스에 보내는 비동기 알림.
-- **좀비(zombie)** — 죽었지만 부모가 회수 안 한 프로세스.
-- **데몬(daemon)** — 백그라운드에서 계속 도는 직원 (예: sshd).
+## 참고
+- `man 7 signal`, `man 7 signal-safety`
+- `man 2 fork`, `man 2 execve`, `man 2 clone`, `man 2 wait`
+- `man 5 proc` — `/proc/PID/*` 파일 의미 전체
 
-## 더 알아보고 싶으면
-- 명령: `man 7 signal`, `man ps`, `man kill`
-- 관련: [filesystem-tree.md](./filesystem-tree.md) — `/proc/<PID>/`로 직원 정보 확인
-
-## 출처
-- B1-1 (Layer 1.5)
-- 학습일: 2026-05-07
+---
+출처: B1-1 (Layer 1.5) · 학습일: 2026-05-07

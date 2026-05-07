@@ -1,150 +1,165 @@
-# 셸 환경 = 출근하는 직원의 출근 메모
+# 셸 환경과 초기화
 
-## 한 마디로
-셸(우리 명령을 받아 실행해주는 직원)이 출근할 때 **어떤 메모를 읽고 어떤 환경 정보를 들고** 시작하는지 결정하는 시스템.
+## 개요
+Bash는 시작 모드(login vs interactive)에 따라 다른 startup 파일을 source하며, 이를 통해 환경 변수·alias·함수·셸 옵션을 설정한다. 환경 변수는 `execve()` 호출 시 자식 프로세스에 복사되어 전파되므로, 어떤 시점에 어떻게 설정되는지가 모든 자동화의 기반이 된다.
 
-## 왜 알아야 해?
+## 왜 알아야 하나
+- SSH·sudo·cron은 각각 다른 시작 모드 → 환경이 달라짐
+- "왜 cron에서 명령을 못 찾지" 같은 함정의 근본 원인
+- 컨테이너 ENTRYPOINT, systemd 유닛의 `Environment=` 설정도 동일 모델
+- 환경 변수 leak이 보안 취약점이 되는 경우 (LD_PRELOAD, PATH injection)
 
-- 매번 SSH 접속할 때마다 환경 변수를 손으로 안 쳐도 자동
-- "왜 SSH 들어가면 환경변수가 안 먹지?" 같은 함정 피함
-- cron이 시간 맞춰 자동 실행할 때 "왜 명령을 못 찾지?" 같은 문제 해결
-
-## 핵심 비유: 셸 = 직원
-
-```
-사용자 (당신)
-    │ 명령 입력
-    ▼
-직원(셸) ─── 명령을 OS에 전달 ──► 컴퓨터
-    │
-    │ 출근 시 메모 읽음
-    ▼
-.bash_profile / .bashrc (출근 메모)
-```
-
-## 직원에게는 두 종류의 출근이 있음
-
-### 1. 정식 출근 (Login)
-- SSH 접속, `su -` 등
-- 읽는 메모: **`.bash_profile`** (없으면 `.profile`)
-- "오늘 어떤 환경에서 일할지" 처음 설정
-
-### 2. 일상 출근 (Non-login)
-- 새 터미널 탭 열기, `bash` 명령
-- 읽는 메모: **`.bashrc`**
-- "이미 출근한 상태에서 보조 직원 추가"
-
-### 3. 메모 안 읽는 출근 (스크립트, cron) ★
-- 셸 스크립트 실행, cron 자동 실행
-- **메모 안 읽음**
-- "잠깐 왔다가 일만 하고 가는 임시 직원"
-- → 환경 변수 거의 비어있음 (cron의 큰 함정)
-
-## 그림으로 보기
+## 셸의 두 차원
 
 ```
-             어떤 출근?
-                │
-        ┌───────┼───────┐
-        ▼       ▼       ▼
-       정식    일상    스크립트/
-       출근    출근    cron
-        │       │       │
-        ▼       ▼       ▼
-   .bash_     .bashrc   ❌ 안 읽음
-   profile    만 읽음   (PATH도 거의 비어있음)
-   읽음
+                    Interactive       Non-interactive
+                  ┌────────────────┬─────────────────┐
+       Login      │  사용자 SSH     │  드뭄 (`bash -l`)│
+                  │  `su -`         │                 │
+                  ├────────────────┼─────────────────┤
+       Non-login  │  새 터미널 탭    │  스크립트 실행   │
+                  │  `bash`         │  cron job        │
+                  └────────────────┴─────────────────┘
 ```
 
-## 환경 변수 = 직원이 기억하는 정보
+판별:
+- `[[ $- == *i* ]]` → interactive (`-i` 플래그 set)
+- `shopt -q login_shell` → login
+
+## Startup 파일 로딩 순서
+
+### Login + Interactive (예: SSH)
+```
+1. /etc/profile
+   └─ 보통 /etc/profile.d/*.sh 모두 source
+2. ~/.bash_profile     (있으면)
+   ├─ 또는 ~/.bash_login (없으면)
+   └─ 또는 ~/.profile  (둘 다 없으면)
+   ★ 보통 .bashrc를 source하도록 작성
+```
+
+### Non-login + Interactive (예: 새 터미널)
+```
+1. /etc/bash.bashrc
+2. ~/.bashrc
+```
+
+### Non-interactive (스크립트, cron)
+```
+- 어느 startup 파일도 자동 source하지 않음
+- 단 BASH_ENV 환경변수가 set되어 있으면 그 파일을 source
+- $0이 'sh'로 호출되면 ENV 변수의 파일
+```
+
+→ **cron은 거의 빈 환경**: 보통 `PATH=/usr/bin:/bin`, `SHELL=/bin/sh`, `HOME=$HOME`. `.bashrc` 안 읽음.
+
+## 환경 변수 vs 셸 변수
 
 ```bash
-MY_VAR=hello              # 직원만 기억 (다른 직원에게 안 알려줌)
-export MY_VAR             # "부하 직원에게도 알려줘" 표시
+foo=hello                # 셸 변수 (현재 프로세스에만)
+export foo               # environment list에 추가 → 자식 프로세스 상속
+export bar=world         # 정의 + export 동시
+declare -x baz=value     # export와 동일
+
+unset foo                # 제거
 ```
 
-→ `export` 안 하면 **자식 프로세스(부하 직원)는 그 변수 못 봄**.
+**내부적으로**:
+- 셸 변수: 셸 프로세스의 메모리 데이터 구조 (key-value)
+- 환경 변수: `execve(path, argv, envp)`의 `envp[]` 배열로 자식에게 복사
 
-확인:
+`/proc/PID/environ` 으로 임의 프로세스의 환경 확인 가능 (NULL 구분, 권한 있으면).
+
+## 일반적 패턴
+
 ```bash
-MY_VAR=hello
-echo $MY_VAR              # hello (현재 셸은 봄)
-bash -c 'echo $MY_VAR'    # 빈 줄 (자식은 못 봄)
+# ~/.bash_profile  (login shell — SSH 진입점)
+[ -f ~/.bashrc ] && . ~/.bashrc        # interactive 설정도 같이
+export PATH="$HOME/.local/bin:$PATH"   # login에서만 PATH 추가
 
-export MY_VAR
-bash -c 'echo $MY_VAR'    # hello (이제 봄)
+# ~/.bashrc  (interactive shell — alias·prompt 등)
+[[ $- == *i* ]] || return              # non-interactive면 즉시 종료
+alias ll='ls -alF'
+PS1='\u@\h:\w\$ '
 ```
 
-## 일반적인 패턴
-
-대부분 `.bash_profile`에 이렇게 둠:
-```bash
-# .bash_profile (정식 출근 메모)
-
-# 일상 출근 메모도 같이 읽기
-if [ -f ~/.bashrc ]; then
-    source ~/.bashrc
-fi
-
-# 정식 출근 시에만 할 일
-export PATH=$PATH:$HOME/bin
-```
-
-→ SSH로 들어가도, 새 터미널 열어도 같은 환경.
+★ `.bashrc` 첫 줄의 `[[ $- == *i* ]] || return` 중요 — `.bashrc`가 non-interactive에서 source되면 출력 명령이 SSH 핸드셰이크를 깨거나 stdin/stdout을 오염시킴 (특히 `scp`, `sftp` 깨짐).
 
 ## 한 번 보자
 
 ```bash
-echo $SHELL           # 어느 직원(셸)인지 (예: /bin/bash)
-env                   # 직원이 기억하는 정보 전체
-env | grep AGENT      # AGENT_ 시작 변수만
-echo $HOME            # 본인 집 경로
-echo $PATH            # 명령 검색 경로
+echo $0                      # 셸 호출 방식 (예: -bash → login)
+shopt login_shell            # off/on
+echo $-                      # 활성 옵션 (i가 있으면 interactive)
 
-# .bashrc 다시 읽기 (재출근 안 하고)
-source ~/.bashrc
-. ~/.bashrc           # source의 줄임 (똑같음)
+env                          # environment list 전체
+env | grep -i agent          # 필터
+declare -p VARNAME           # 변수 메타데이터 (export 여부 등)
+declare -px                  # exported 변수만
+
+# 자식 프로세스 환경 확인
+bash -c 'echo $foo'
+sudo -i env                  # sudo가 환경 어떻게 처리하는지
+
+# startup 추적
+bash -x -l                   # login shell trace 모드
+bash --rcfile /tmp/myrc      # 다른 rc로 시작
+
+# 임의 프로세스 환경 (권한 있으면)
+xargs -0 -L1 < /proc/$$/environ
 ```
 
-## 자주 헷갈리는 것
+## 흔한 함정
 
-- **SSH 들어가면 `.bashrc`가 읽힘** → ❌ SSH는 정식 출근 → `.bash_profile`. `.bashrc`는 명시적 source 해야.
-- **`export` 없이 변수 정의해도 자식 스크립트에서 보임** → ❌ **export 필수**.
-- **cron에서 환경 변수가 없는 건 셸 버그** → ❌ cron은 메모 안 읽는 임시 직원. 정상 동작.
-- **세 가지 메모 다 만들어야** → ❌ 셸은 우선순위로 한 개만 읽음.
+- **SSH 진입 후 `.bashrc` 안 읽힘** — login shell이라 `.bash_profile`만. `.bash_profile`에서 `.bashrc`를 source하지 않으면 alias·함수 다 누락.
+- **non-interactive에서 alias 안 먹음** — Bash 기본적으로 non-interactive 셸에서 alias expansion off (`shopt expand_aliases` 필요).
+- **cron의 PATH 부재** — `/usr/local/bin`, `~/.local/bin` 등 모두 누락. 절대 경로 사용 또는 crontab 상단에 `PATH=` 명시.
+- **`sudo`의 환경 reset** — sudoers `env_reset` 기본 정책으로 대부분 환경 변수 drop. `--preserve-env` 또는 sudoers `env_keep` 명시 필요.
+- **`export VAR=$(cmd)` 의 함정** — `cmd`가 실패해도 export는 성공 (exit code는 마지막 명령인 `export`의 것 = 0). `set -e`와 조합 시 검출 안 됨. 분리해서: `VAR=$(cmd) || exit; export VAR`.
+- **environ size 한계** — `MAX_ARG_STRLEN` (보통 128KB) 또는 `ARG_MAX` (보통 2MB) 초과 시 `execve` 실패 (`E2BIG`). 환경에 거대한 데이터 넣으면 깨짐.
+- **PATH 보안** — sudo로 실행되는 스크립트가 상대 경로를 쓰면 PATH injection 공격 가능. secure_path 사용.
+- **배포판별 default startup** — Debian의 `/etc/skel/.bashrc`, RHEL의 `/etc/profile.d/`, macOS Bash 3.x의 다른 동작.
 
-## 이번 과제(B1-1)에서
-
-`AGENT_HOME` 등을 SSH 접속 시 자동 설정:
+## B1-1 매핑
 
 ```bash
-# /home/agent-admin/.bash_profile 에:
+# /home/agent-admin/.bash_profile
 export AGENT_HOME=/home/agent-admin/agent-app
 export AGENT_PORT=15034
 export AGENT_UPLOAD_DIR=$AGENT_HOME/upload_files
 export AGENT_KEY_PATH=$AGENT_HOME/api_keys/t_secret.key
 export AGENT_LOG_DIR=/var/log/agent-app
 
-# .bashrc도 같이 읽기
-[ -f ~/.bashrc ] && source ~/.bashrc
+# .bashrc도 같이 (interactive 환경 일관성)
+[ -f ~/.bashrc ] && . ~/.bashrc
 ```
 
-★ **cron이 monitor.sh 실행할 때는 이 환경 못 받음** — 스크립트 안에서 직접 export하거나 첫 줄에서 source 해야. (Layer 5에서 자세히)
+★ **cron 실행 monitor.sh의 환경 함정**:
+1. PATH 없음 → 절대 경로 (`/usr/bin/ps`) 사용 또는 스크립트 첫 줄에서 `PATH=...` 설정
+2. `AGENT_*` 환경변수 없음 → 스크립트 안에서 source 또는 export
+3. `LANG`/`LC_ALL` 없음 → `ps`/`date` 출력 형식이 달라질 수 있음 → `LC_ALL=C` 명시 권장 (POSIX 일관성)
 
-## 기술 용어 풀이
+```bash
+# monitor.sh 상단 권장 패턴
+export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+export LC_ALL=C
+[ -f /home/agent-admin/.bash_profile ] && . /home/agent-admin/.bash_profile
+```
 
-- **셸(shell)** — 명령어를 받아 OS에 전달하는 직원. bash, zsh, sh 등.
-- **환경 변수(environment variable)** — 직원이 기억하는 키=값 정보.
-- **export** — 자식 프로세스에 변수 전달하라는 표시.
-- **source / `.`** — 메모(파일)를 다시 읽어서 환경 갱신.
-- **login shell** — 정식 출근 시작 셸.
-- **non-login shell** — 일상 출근 셸.
-- **interactive shell** — 사람이 키보드로 명령 입력하는 셸.
+## 인접 토픽
 
-## 더 알아보고 싶으면
-- 명령: `man bash` (INVOCATION 섹션), `man env`
-- 다음 노트: [process-and-signals.md](./process-and-signals.md) — 직원이 실제로 일하는 단위(프로세스)
+- **systemd unit `Environment=` / `EnvironmentFile=`** — 서비스 환경 관리의 표준
+- **`/etc/environment`** — PAM이 모든 로그인에 set (셸 무관, KEY=VALUE 단순 형식)
+- **dotenv 패턴** — 앱별 `.env` 파일 (보안 주의 — 권한 관리)
+- **direnv / mise / asdf** — 디렉토리별 자동 환경 전환
+- **secrets management** — 환경 변수의 secret 저장은 안티패턴 (HashiCorp Vault, AWS Secrets Manager, 1Password CLI)
+- **shellcheck** — 셸 스크립트 정적 분석 (필수 도구)
 
-## 출처
-- B1-1 (Layer 1.4)
-- 학습일: 2026-05-07
+## 참고
+- `man bash` — INVOCATION, FILES 섹션
+- `man 7 environ`
+- `man 5 crontab` — cron 환경 모델
+- `man 8 sudoers` — env_reset, env_keep 정책
+
+---
+출처: B1-1 (Layer 1.4) · 학습일: 2026-05-07

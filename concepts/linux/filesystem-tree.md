@@ -1,92 +1,98 @@
-# 리눅스 파일시스템 = 아파트 단지
+# Linux 파일시스템 계층 (FHS)
 
-## 한 마디로
-리눅스의 모든 파일과 폴더는 **하나의 아파트 단지** 안에 모여 있고, 어느 단지(서버)에 가도 **방의 종류와 위치는 같은 약속**으로 정해져 있음.
+## 개요
+모든 파일·디렉토리가 단일 루트(`/`)에서 시작하는 트리로 조직되며, 그 배치는 **Filesystem Hierarchy Standard (FHS)**로 표준화되어 있다. Windows의 드라이브 분리 모델(`C:`, `D:`)과 달리, 외부 저장장치도 트리의 어떤 노드에 mount되어 단일 네임스페이스에 통합된다.
 
-## 왜 알아야 해?
+## 왜 알아야 하나
+- 시스템 자동화·운영의 모든 경로 가정이 FHS에 기반
+- 패키지 매니저·컨테이너·로깅 시스템이 표준 위치를 전제
+- 보안 사고 다수가 잘못된 디렉토리 권한·위치에서 발생
+- 모니터링·디버깅 시 "어디 봐야 하나"의 첫 단계
 
-만약 단지마다 관리사무소 위치가 다르다면? 새 단지 갈 때마다 헤매지. 리눅스도 마찬가지:
-
-- 어느 서버를 가도 **설정 파일은 항상 `/etc` 안**
-- 어느 서버를 가도 **로그는 항상 `/var/log` 안**
-- 새 서버에 적응하는 시간이 짧아짐
-
-→ "이 파일 어디 있어?" 같은 질문이 거의 사라짐.
-
-## 그림으로 보기
+## 표준 디렉토리
 
 ```
-              아파트 단지 입구  =  /
-                     │
-   ┌──────┬──────────┼──────────┬──────────┐
-   │      │          │          │          │
-관리실   주민         창고       전광판     공구창고
- /etc    /home       /var       /proc      /usr
-   │      │          │          │          │
- 규칙·    각 주민      쌓이는     실시간     도구
- 설정     의 집       것들       상태       (명령들)
-                  (로그·메일)  (가짜 파일!
-                                = 화면)
+/                    루트 (단일 네임스페이스의 진입점)
+├── etc/             정적 시스템 설정 (텍스트 파일 위주)
+├── home/            일반 사용자 홈 (멀티유저 일관 위치)
+├── var/             가변 데이터 (logs, mail, spool, lib, cache)
+│   ├── log/         시스템 + 애플리케이션 로그
+│   └── lib/         애플리케이션 영구 상태 (DB, package state)
+├── usr/             사용자 영역 프로그램 (대부분의 설치된 바이너리)
+│   ├── bin/         일반 사용자 실행 파일
+│   ├── sbin/        시스템 관리자용
+│   └── local/       사이트 로컬 설치 (패키지 매니저 외)
+├── bin, sbin/       기본 명령 (modern Linux는 /usr/bin·/usr/sbin 심볼릭 링크)
+├── proc/            ★ pseudo-filesystem — 커널·프로세스 상태를 파일 인터페이스로 노출
+├── sys/             ★ sysfs — 디바이스·드라이버·커널 객체 인터페이스
+├── dev/             ★ devfs — 장치 파일 (블록·캐릭터 디바이스, udev 동적 관리)
+├── tmp/             임시 (보통 tmpfs, 재부팅 시 휘발)
+├── opt/             3rd-party 수동 설치 패키지
+├── mnt, media/      mount 대상 (외부 저장 장치)
+└── root/            root 사용자 홈 (/home과 분리 — 단일 사용자 부트 보장)
 ```
 
-## 각 방을 한 줄로
+## /proc, /sys, /dev — pseudo-filesystem 트리오
 
-| 방 (경로) | 비유 | 무엇 들어있는지 |
+전통적 디스크 파일이 아니라 **커널이 동적으로 생성하는 가상 파일**:
+
+```
+/proc       프로세스·커널 런타임 상태 (POSIX 스타일)
+            예: /proc/PID/status, /proc/cpuinfo, /proc/meminfo, /proc/stat
+
+/sys        커널 객체 모델 (sysfs) — 디바이스·드라이버·전원·cgroup
+            예: /sys/class/net/eth0/, /sys/fs/cgroup/
+
+/dev        디바이스 노드 (현대는 udev가 동적 관리)
+            예: /dev/sda, /dev/null, /dev/random
+```
+
+**핵심 메커니즘**: `cat /proc/cpuinfo` 같은 read는 실제로는 **VFS가 커널 핸들러를 호출**해 그때그때 텍스트를 합성·반환. 디스크 I/O 없음. monitor.sh의 정보 수집 핵심 인터페이스.
+
+## 한 번 보자
+
+```bash
+ls -F /                       # 디렉토리(/), 실행파일(*), 링크(@) 표시
+stat /etc                     # inode 정보, 권한, 접근/수정 시간
+mount | head                  # 현재 마운트된 파일시스템들
+df -hT                        # 파일시스템 종류 포함 사용량 (-T 핵심)
+findmnt                       # mount 트리 시각화
+cat /proc/self/status         # 현재 프로세스(=cat) 상태
+ls -l /proc/$$/fd/            # 현재 셸의 열린 파일 디스크립터들
+cat /proc/mounts              # mount 정보 raw (=findmnt 데이터 소스)
+```
+
+## 흔한 함정
+
+- **`/proc` write 가능한 항목** — 단순 read-only가 아니라 커널 파라미터 조정 인터페이스 (`echo 1 > /proc/sys/net/ipv4/ip_forward`). sysctl이 이걸 추상화.
+- **`/etc/init.d` vs systemd unit** — `init.d`는 레거시 backwards compat. 현대는 `/etc/systemd/system/`.
+- **`/tmp` ≠ `/var/tmp`** — `/tmp`는 보통 tmpfs로 휘발, `/var/tmp`는 디스크에 영구 (재부팅 후에도).
+- **`/usr/local/bin` 우선순위** — `$PATH`에서 `/usr/bin`보다 먼저 와야 사이트 설치가 시스템 설치를 override.
+- **`/root`가 별도인 이유** — `/home`이 별도 파티션이고 마운트 실패해도 root는 부팅 가능해야 함.
+- **`/dev/null`도 디스크에 없음** — character device. write는 항상 성공, read는 즉시 EOF.
+
+## B1-1 매핑
+
+| 요구 | 경로 | 설계 의도 |
 |---|---|---|
-| `/etc` | 관리사무소 | 시스템 설정 (SSH, 네트워크, 사용자 목록) |
-| `/home` | 주민 거주 동 | 일반 사용자의 개인 폴더 |
-| `/var` | 창고 | 시간 지나면 쌓이는 것 (특히 `/var/log` = 로그) |
-| `/proc` | **가짜 전광판** | 실시간 상태 (디스크에 없음! 보는 순간 만들어짐) |
-| `/usr/bin` | 공구창고 | 우리가 쓰는 거의 모든 명령 |
-| `/tmp` | 임시 보관함 | 잠깐 두는 곳 (재부팅 시 비워짐) |
+| `sshd_config` 수정 | `/etc/ssh/sshd_config` | 시스템 데몬 설정은 `/etc` |
+| `AGENT_HOME` | `/home/agent-admin/agent-app` | 사용자 소유 앱은 홈 아래 |
+| `monitor.log` | `/var/log/agent-app/` | 가변 로그는 `/var/log` |
+| 리소스 측정 | `/proc/stat`, `/proc/meminfo` | 커널 상태 노출은 procfs |
+| 임시 작업 | `/tmp` (tmpfs 권장) | 휘발성 OK |
 
-## 가장 신기한 부분: `/proc`
+## 인접 토픽 (확장 학습)
 
-`/proc` 안의 파일은 **진짜 파일이 아님**.
+- **mount namespace** — 컨테이너가 격리된 `/`를 갖는 메커니즘
+- **bind mount** (`mount --bind`) — 같은 디렉토리를 트리의 다른 위치에 노출
+- **overlayfs** — 컨테이너 이미지의 레이어드 파일시스템 (lower + upper + work)
+- **VFS layer** — inode·dentry·superblock 추상화로 ext4·XFS·btrfs·tmpfs 등 통합
+- **inode 고갈** — 파일 수가 많으면 디스크 용량 남아도 새 파일 생성 실패 (`df -i`)
 
-```bash
-cat /proc/cpuinfo
-```
+## 참고
+- `man 7 hier` — 표준 매뉴얼
+- `man 7 file-hierarchy` (systemd 진영)
+- [FHS 3.0](https://refspecs.linuxfoundation.org/FHS_3.0/fhs/index.html)
 
-이 명령을 치는 순간 **컴퓨터가 즉석에서 CPU 정보를 만들어 보여줌**. 디스크 어디에도 `cpuinfo` 라는 파일은 없음. 마치 **종이가 아닌 화면** 같음.
-
-→ `monitor.sh`가 CPU·메모리 정보 가져올 때 이 "가짜 전광판"을 봄.
-
-## 한 번 보자 (Mac에서도 됨)
-
-```bash
-ls /                          # 단지 입구 방들 보기
-ls /etc/ | head -10           # 관리사무소 안 일부
-ls /var/log/ | head           # 창고 안 로그칸
-cat /etc/hostname             # 컴퓨터 이름이 적힌 종이
-```
-
-## 자주 헷갈리는 것
-
-- **`/proc` 파일이 디스크에 있다고 생각** → ❌ 없음. **가짜**.
-- **로그는 항상 `/var/log` 에만** → 대부분 그렇지만 앱이 다른 데 둘 수도 있음. 그래도 표준은 `/var/log`.
-- **`/tmp`에 중요 파일 둠** → 재부팅 시 사라질 수 있음. 안전하지 않음.
-
-## 이번 과제(B1-1)에서
-
-| 요구사항 | 어느 방에 가야? |
-|---|---|
-| SSH 포트 변경 (`sshd_config` 수정) | `/etc/ssh/` (관리사무소) |
-| 앱 홈 (`AGENT_HOME`) | `/home/agent-admin/agent-app/` (주민의 집) |
-| 모니터 로그 (`monitor.log`) | `/var/log/agent-app/` (창고) |
-| CPU·메모리 정보 가져오기 | `/proc/` (전광판) |
-
-## 기술 용어 풀이 (나중에 만날 단어들)
-
-- **파일시스템(filesystem)** — 파일·폴더를 저장·정리하는 방식. "아파트 단지" 자체.
-- **루트(root)** — 단지 입구 `/` 또는 모든 권한을 가진 관리자 사용자. (둘은 다른 의미)
-- **마운트(mount)** — USB·외장 디스크를 단지의 한 방에 "연결"하는 것 (예: `/mnt/usb`).
-- **FHS** — Filesystem Hierarchy Standard. "어디에 뭘 두자"는 표준 약속.
-
-## 더 알아보고 싶으면
-- 명령: `man hier` (단지 방 설명서)
-- 다음 노트: [users-and-groups.md](./users-and-groups.md) — 단지 주민들
-
-## 출처
-- B1-1 시스템 관제 자동화 (Layer 1.1)
-- 학습일: 2026-05-07
+---
+출처: B1-1 (Layer 1.1) · 학습일: 2026-05-07
