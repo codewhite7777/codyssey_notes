@@ -2,17 +2,10 @@
 # 각 과제 레포는 독립 git이므로 부모에서 추적하지 않음
 
 # Codyssey 과제 레포 패턴 (B1-N, B2-N, A1-N 등)
-B*/
-A*/
-C*/
-
-# 단, 워크스페이스 자체 자산은 추적
-!CLAUDE.md
-!INDEX.md
-!concepts/
-!retrospectives/
-!.claude/
-!.gitignore
+# 루트 앵커(/) 필수 — 그러지 않으면 .claude/commands 같은 하위 폴더도 매칭됨 (macOS case-insensitive)
+/B*/
+/A*/
+/C*/
 
 # OS / 에디터
 .DS_Store
