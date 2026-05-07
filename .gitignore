@@ -1,11 +1,12 @@
 # 워크스페이스를 git init 했을 경우용
 # 각 과제 레포는 독립 git이므로 부모에서 추적하지 않음
 
-# Codyssey 과제 레포 패턴 (B1-N, B2-N, A1-N 등)
-# 루트 앵커(/) 필수 — 그러지 않으면 .claude/commands 같은 하위 폴더도 매칭됨 (macOS case-insensitive)
-/B*/
-/A*/
-/C*/
+# Codyssey 과제 레포 격리 (B1-N, B2-N 등)
+# 주의: macOS는 case-insensitive 파일시스템이라 /B*/ 같은 광범위 패턴은
+# concepts/ 같은 정상 폴더까지 잡음. 따라서 정확한 prefix-숫자 패턴 사용.
+/B?-*/
+/A?-*/
+/C?-*/
 
 # OS / 에디터
 .DS_Store

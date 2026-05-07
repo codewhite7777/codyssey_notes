@@ -9,7 +9,7 @@
 
 | ID | 주제 | 분야 | 시간 | 상태 | 레포 | 핵심 개념 |
 |---|---|---|---|---|---|---|
-| B1-1 | 시스템 관제 자동화 스크립트 | Linux/OS | 40h | 🔵 | `B1-1/` | SSH·방화벽·ACL·cron·Bash |
+| B1-1 | 시스템 관제 자동화 스크립트 | Linux/OS | 40h | 🟡 | `B1-1/` | SSH·방화벽·ACL·cron·Bash |
 | B1-2 | 프로세스·리소스 트러블슈팅 | Linux/OS | 40h | 🔵 | `B1-2/` | OOM·CPU spike·Deadlock·이슈리포트 |
 | B1-3 | 파일 기반 가계부 | Python/Git | 60h | 🔵 | `B1-3/` | dataclass·generator·decorator·타입힌트 |
 | B1-4 | Git 협업 워크플로우 | Python/Git | 20h | 🔵 | `B1-4/` (팀) | branch·PR·충돌·reset·revert·stash |
