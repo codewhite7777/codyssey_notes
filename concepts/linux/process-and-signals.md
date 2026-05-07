@@ -1,152 +1,155 @@
-# 프로세스와 시그널
+# 프로세스와 시그널 = 일하는 직원과 메모
 
-## 한 줄 정의
-**프로세스** = 실행 중인 프로그램의 인스턴스 (PID로 식별).
-**시그널** = OS가 프로세스에게 보내는 비동기 알림 (예: "종료해라", "설정 다시 읽어라").
+## 한 마디로
+**프로세스** = 지금 일하고 있는 직원 (사번 = PID).
+**시그널** = OS가 직원에게 보내는 메모/알림 (예: "퇴근해", "설정 다시 읽어").
 
-## 왜 필요한가
-- 시스템에서 **무엇이 돌고 있는지 관측** (monitor.sh의 핵심 역할)
-- 죽은 프로세스 / 응답 없는 프로세스 식별
-- **정상 종료 vs 강제 종료** 구분 (B1-2 트러블슈팅의 기초)
-- 디버깅: 프로세스가 왜 죽었는지
+## 왜 알아야 해?
 
-## 핵심 원리
+- 컴퓨터에서 무엇이 돌고 있는지 파악 (monitor.sh 핵심)
+- 죽은 / 응답 없는 프로세스 식별
+- 정상 종료 vs 강제 종료의 차이 이해
+- B1-2 트러블슈팅의 기본기
 
-### 프로세스의 정체
+## 프로세스 = 일하는 직원
+
 ```
-프로세스 = PID + PPID(부모) + UID/GID + 메모리 + 열린 파일들 + 환경 변수
-```
-
-- **PID** (Process ID): 정수, 1부터 시작. PID 1은 init/systemd
-- **PPID** (Parent PID): 누가 나를 fork했는지
-- 모든 프로세스는 부모를 가짐 (PID 1만 예외)
-
-### 프로세스 생성: fork-exec
-```
-부모 프로세스 (셸)
-    │
-    ├─ fork() → 자식 프로세스 복제 (메모리 그대로)
-    │
-    └─ 자식: exec("/usr/bin/python") → 메모리 새 프로그램으로 교체
+회사 (=컴퓨터)
+  │
+  ├─ 직원 1번 (PID 1) ─── 회장님 (init/systemd, 모두의 시조)
+  │
+  ├─ 직원 1234번 (PID 1234) ─── 부모: 1, 하는 일: SSH 데몬
+  │
+  ├─ 직원 5678번 (PID 5678) ─── 부모: 1234, 하는 일: agent_app.py
+  │
+  └─ ...
 ```
 
-→ 모든 명령은 셸이 fork하고 exec하는 방식. 
-→ 환경 변수는 fork 시점에 자식에게 복사됨 (그래서 export가 필요).
+- **PID (사번)** — 모든 직원에게 1부터 부여된 번호
+- **PPID** — 누가 채용했는지 (부모 직원의 사번)
+- 모든 직원은 부모가 있음 (1번만 예외 — 창립자)
 
-### 프로세스 상태 (ps의 STAT 컬럼)
+## 어떻게 직원이 늘어나는가: 분신술 (fork-exec)
+
 ```
-R  Running       실행 중 또는 실행 가능 (큐 대기)
-S  Sleeping      이벤트 대기, 인터럽트 가능 (대부분의 idle)
-D  Disk sleep    인터럽트 불가, 보통 I/O 대기
-Z  Zombie        죽었는데 부모가 회수 안 함
-T  Stopped       Ctrl+Z 등으로 일시 중단
+부모 직원
+   │
+   ├─ fork()  → "내 분신을 만들어"  (자식 직원 = 부모의 복제)
+   │
+   └─ 자식: exec("python")  → "내 일을 다른 일로 바꿔"
+                              (메모리를 새 프로그램으로 교체)
 ```
 
-### 시그널: 비동기 알림
+→ 셸에서 `python` 치면: 셸이 분신을 만들고, 분신이 python으로 변신.
+→ 환경 변수는 fork 시점에 자식에게 복사됨 (그래서 `export`가 필요).
 
-| 번호 | 이름 | 의미 | 잡을 수 있나? |
+## 시그널 = 직원에게 보내는 쪽지
+
+| 번호 | 이름 | 의미 | 직원이 무시 가능? |
 |---|---|---|---|
-| 1  | SIGHUP  | 터미널 끊김 / "설정 재읽기" 관습 | ✅ |
-| 2  | SIGINT  | Ctrl+C, 사용자 인터럽트 | ✅ |
-| 9  | **SIGKILL** | **즉시 종료** (cleanup 없음) | ❌ |
-| 15 | **SIGTERM** | **정상 종료 요청** (cleanup 후 끝내라) | ✅ (기본 동작은 종료) |
-| 17 | SIGCHLD | 자식 프로세스 죽었음 알림 | ✅ |
-| 19 | SIGSTOP | 일시 정지 | ❌ |
-| 20 | SIGTSTP | Ctrl+Z (일시 정지 요청) | ✅ |
+| 2  | SIGINT  | "Ctrl+C 눌렀어, 멈춰" | ✅ |
+| 9  | **SIGKILL** | "지금 당장 사라져" | ❌ (절대 무시 못함) |
+| 15 | **SIGTERM** | "정리하고 퇴근해" | ✅ (잡아서 처리 가능) |
+| 1  | SIGHUP  | "터미널 끊겼어 / 설정 재읽어" | ✅ |
 
 ### SIGTERM vs SIGKILL — 가장 중요
 
 ```
-SIGTERM (15): "끝낼 시간이야, 정리하고 끝내"
-              → 프로세스가 try/finally로 cleanup 가능
-              → 임시 파일 삭제, 연결 종료, 상태 저장
-              → 그래도 안 끝나면 그때 SIGKILL
+SIGTERM (15): 정중한 부탁
+  → "정리할 시간 줄게. 임시 파일 지우고, 저장하고, 퇴근해"
+  → 직원이 cleanup 코드 실행 가능
+  → 그래도 안 끝나면 그때 SIGKILL
 
-SIGKILL (9):  "즉시 죽어" — OS가 강제 종료
-              → cleanup 코드 절대 실행 안 됨
-              → 임시 파일 남음, DB 트랜잭션 깨짐 가능
-              → "최후의 수단"
+SIGKILL (9): 강제 추방
+  → "지금 당장 나가" — OS가 직원을 잡아 끌어냄
+  → cleanup 코드 절대 실행 못함
+  → 책상 정리 못함 (임시 파일 남음, 저장 안 됨)
+  → "최후의 수단"
 ```
 
-`kill -9 PID`가 위험한 이유: cleanup 못 하니까 **데이터 손상 위험**.
-정석: `kill PID` (SIGTERM) 먼저 → 안 되면 `kill -9 PID`.
+★ `kill -9 PID`가 위험한 이유: **데이터 손상 위험**.
+정석: 먼저 `kill PID` (SIGTERM) → 안 되면 `kill -9`.
 
-### 좀비와 고아
-- **좀비(Z)**: 자식이 죽었는데 부모가 `wait()`으로 회수 안 함. PID만 차지하고 메모리 거의 없음.
-- **고아**: 부모가 먼저 죽은 자식 → PID 1(init)이 입양 → init이 정상 회수.
+## 프로세스 상태 (직원의 현재 상태)
 
-## 자주 쓰는 명령
+```
+R  Running     일하고 있음 (또는 일할 수 있음)
+S  Sleeping    이벤트 기다리는 중 (idle)
+D  Disk wait   디스크 응답 대기 (보통 잠깐)
+Z  Zombie      ★ 이미 죽었는데 사번 안 반납
+T  Stopped     일시 정지 (Ctrl+Z)
+```
+
+**좀비**: 자식 직원이 죽었는데 부모가 사망신고 안 함. 사번만 차지.
+**고아**: 부모가 먼저 죽으면 → 회장(PID 1)이 입양 → 정상 처리.
+
+## 한 번 보자 (Mac에서도 됨)
 
 ```bash
-# 프로세스 보기
-ps aux                       # 모든 프로세스 (BSD 스타일, 가장 흔함)
-ps -ef                       # 모든 프로세스 (System V 스타일)
-ps aux | grep agent_app      # 특정 프로세스 찾기
-ps -p 1234 -o %cpu,%mem      # 특정 PID의 CPU/MEM만
+# 직원 명단
+ps aux                         # 모든 직원 (BSD 스타일)
+ps aux | head                  # 처음 10명만
+ps aux | grep ssh              # 'ssh' 들어간 직원만
 
-# ps aux 컬럼:
-# USER  PID  %CPU  %MEM  VSZ  RSS  TTY  STAT  START  TIME  COMMAND
-#                              └─ 실제 메모리(KB)
-#                        └─ 가상 메모리(KB)
+# ps aux의 컬럼:
+# USER  PID  %CPU  %MEM  ...  COMMAND
+# 누가  사번  CPU   메모리      뭐 하는 중
 
-# PID 찾기
-pgrep -f agent_app           # 패턴(전체 명령줄)으로
-pgrep agent_app              # 이름으로 (정확히)
-pidof agent_app.py           # 정확한 이름으로
+# 특정 직원 찾기
+pgrep -f agent_app             # 'agent_app' 들어간 직원의 사번
+pidof bash                     # bash라는 직원의 사번
 
-# 시그널 보내기
-kill 1234                    # SIGTERM (15) — 정상 종료 요청
-kill -15 1234                # 명시적 SIGTERM
-kill -9 1234                 # SIGKILL — 강제
-kill -HUP 1234               # SIGHUP — 보통 "재로드"
-kill -l                      # 모든 시그널 목록
+# 메시지 보내기 (★ 자기 컴퓨터에서 함부로 X)
+kill 1234                      # SIGTERM (정리하고 퇴근)
+kill -9 1234                   # SIGKILL (지금 당장)
+kill -HUP 1234                 # SIGHUP (설정 재읽기)
 
-# 패턴으로 죽이기 (조심!)
-pkill -f agent_app           # 매칭되는 모든 프로세스에 SIGTERM
-killall agent_app.py         # 정확한 이름의 모든 인스턴스에
-
-# 실시간 관측
-top                          # 대화형 모니터링
-top -b -n 1                  # 1회 출력 후 종료 (스크립트용 ★)
-htop                         # 더 보기 좋은 top (별도 설치)
+# 실시간 보기
+top                            # 실시간 직원 현황 (q 누르면 종료)
+top -b -n 1                    # 한 번만 출력 (스크립트용)
 ```
 
-## 흔한 오해
+## 자주 헷갈리는 것
 
-- ❌ "kill 명령은 죽이는 명령" → ✅ 이름은 그렇지만 실제는 **시그널 전송 도구**. SIGUSR1(사용자 정의)도 보낼 수 있음.
-- ❌ "kill -9가 깔끔하다" → ✅ **반대**. cleanup 못 해서 더 더러움. **SIGTERM 먼저, 안 되면 SIGKILL**.
-- ❌ "프로세스 응답 없으면 좀비" → ✅ 응답 없는 건 D 또는 S 상태일 수 있음. 좀비(Z)는 "이미 죽었지만 회수 안 됨".
-- ❌ "SIGINT(Ctrl+C)와 SIGTERM은 같다" → ✅ 둘 다 잡을 수 있고 기본 동작이 종료라는 점은 같지만, 구분되는 시그널. 스크립트는 다르게 처리할 수 있음.
-- ❌ "ps aux의 %CPU가 그 순간 사용률" → ✅ 보통 **시작 후 평균** (구현마다 다름). 순간값은 `top`이 더 정확.
+- **kill 명령은 죽이는 명령** → 이름은 그렇지만 실제는 **메시지 전송**. 시그널 종류에 따라 다름.
+- **kill -9가 깔끔하다** → ❌ **반대**. 정리 못 해서 더 더러움.
+- **응답 없는 직원 = 좀비** → ❌ 응답 없음 = D 또는 S 상태. 좀비는 "죽었는데 사번 안 반납".
+- **`ps`의 %CPU가 그 순간** → 보통 "시작 후 평균". 순간값은 `top`이 더 정확.
 
 ## 이번 과제(B1-1)에서
 
 monitor.sh의 health check 부분:
 ```bash
-# 1. 프로세스 살아있나?
+# 1. 직원이 살아있나?
 PID=$(pgrep -f agent_app.py)
 if [ -z "$PID" ]; then
-    echo "[ERROR] agent_app.py not running"
+    echo "[ERROR] agent_app.py 없음"
     exit 1
 fi
 
-# 2. 그 프로세스의 CPU/MEM 측정
+# 2. 그 직원의 CPU/메모리 측정
 ps -p $PID -o %cpu=,%mem= --no-headers
 ```
 
-cron이 monitor.sh를 매분 실행:
-- cron이 자식 프로세스로 monitor.sh를 fork+exec
-- 끝나면 cron이 정상 회수 → 좀비 안 생김
+cron이 monitor.sh를 매분 실행 = cron이 분신을 만들어 monitor.sh로 변신시키고, 끝나면 정상 사망신고.
 
 앱 종료가 Ctrl+C라는 건 → SIGINT를 받음 → 앱이 잡아서 정상 종료 처리.
 
-## 관련 개념
-- [filesystem-tree.md](./filesystem-tree.md) — `/proc/<PID>/`로 프로세스 정보 노출
-- [shell-environment.md](./shell-environment.md) — 환경 변수는 fork 시 복사
-- (예정) `concepts/os/cpu-measurement.md` — `/proc/stat`로 CPU 사용률 정확히 계산
-- (예정) B1-2 [oom-and-watchdog.md] — 시그널 기반 종료의 실제 사례
+## 기술 용어 풀이
+
+- **프로세스(process)** — 실행 중인 프로그램의 한 인스턴스 = 일하는 직원.
+- **PID** — 프로세스 사번 (정수, 1부터).
+- **PPID** — 부모 프로세스의 PID.
+- **fork** — 자기 자신을 복제 (분신술).
+- **exec** — 메모리를 다른 프로그램으로 교체 (변신).
+- **시그널(signal)** — OS가 프로세스에 보내는 비동기 알림.
+- **좀비(zombie)** — 죽었지만 부모가 회수 안 한 프로세스.
+- **데몬(daemon)** — 백그라운드에서 계속 도는 직원 (예: sshd).
+
+## 더 알아보고 싶으면
+- 명령: `man 7 signal`, `man ps`, `man kill`
+- 관련: [filesystem-tree.md](./filesystem-tree.md) — `/proc/<PID>/`로 직원 정보 확인
 
 ## 출처
 - B1-1 (Layer 1.5)
 - 학습일: 2026-05-07
-- 참고: `man 7 signal`, `man ps`, `man kill`, `man proc`

@@ -1,121 +1,130 @@
-# 사용자와 그룹
+# 사용자와 그룹 = 단지 주민과 동호회
 
-## 한 줄 정의
-리눅스의 다중 사용자 보안 모델 — 모든 파일·프로세스에 **소유자(user)**와 **그룹(group)**이 부여되어 누가 무엇을 할 수 있는지 통제하는 기반.
+## 한 마디로
+컴퓨터를 같이 쓰는 사람들을 **주민(사용자)**과 **모임(그룹)**으로 묶어서 누가 어디 들어가고 뭘 할 수 있는지 관리.
 
-## 왜 필요한가
+## 왜 알아야 해?
 
-같은 머신을 여러 사람·서비스가 쓸 때:
-- A의 파일을 B가 함부로 못 읽게
-- 운영팀(admin)과 개발팀(dev)에게 다른 권한
-- 앱이 자기 데이터만 건드리고 다른 건 못 건드리게 (격리)
+같은 컴퓨터를 여러 사람이 쓸 때:
+- 내 폴더를 남이 함부로 못 보게
+- 운영팀과 개발팀에게 다른 권한
+- 앱이 자기 데이터만 만지고 다른 건 못 만지게
 
-이 과제(B1-1)에서:
-- `agent-admin`(운영) / `agent-dev`(개발) / `agent-test`(QA) → 역할 분리
-- `agent-common`(전원) / `agent-core`(admin+dev) → 데이터 접근 분리
+이 과제에서:
+- 운영(`agent-admin`), 개발(`agent-dev`), 테스트(`agent-test`) — 역할마다 다른 주민
+- 둘 이상이 함께 쓸 폴더는 모임(그룹)으로 묶음
 
-## 핵심 원리
-
-### 사용자(User)
-- **UID**(User ID, 정수)로 식별 — 이름은 사람용, OS는 UID로 처리
-- root는 UID=0 (모든 권한)
-- 일반 사용자는 보통 UID >= 1000
-
-### 그룹(Group)
-- **GID**(Group ID)로 식별
-- 한 사용자는 **여러 그룹**에 속할 수 있음
-
-### Primary vs Supplementary Group
+## 그림으로 보기
 
 ```
-사용자 agent-admin
-  ├─ Primary Group: agent-admin (보통 사용자명과 같은 그룹이 자동 생성됨)
-  └─ Supplementary Groups: agent-common, agent-core
+              단지 주민 명단
+─────────────────────────────────────────────
+주민          본인 호수       가입한 동호회
+─────         ─────────       ─────────────────────
+agent-admin   agent-admin     [헬스, 운영팀]
+agent-dev     agent-dev       [헬스, 운영팀]
+agent-test    agent-test      [헬스]
+
+[헬스]   동호회 = agent-common  (모두 함께 쓰는 공유 공간)
+[운영팀] 동호회 = agent-core    (중요한 일만 하는 사람)
 ```
 
-| 구분 | Primary | Supplementary |
+→ `agent-test`는 [운영팀] 동호회 아님 → 운영팀 전용 자료실 못 들어감.
+
+## 핵심 개념 단 두 가지
+
+### 1. 한 사람은 모임 여러 개에 들 수 있음
+
+```
+  agent-admin
+       ├─ 본인 호수 (primary group)        ← 항상 1개
+       └─ 추가 가입 모임 (supplementary)    ← 0개 이상
+              ├─ agent-common (헬스)
+              └─ agent-core (운영팀)
+```
+
+| 종류 | 개수 | 의미 |
 |---|---|---|
-| 개수 | **항상 정확히 1개** | 0개 이상 |
-| 새 파일 만들 때 | 이 그룹이 기본 소유 그룹 | 영향 없음 (단 ACL/setgid 제외) |
-| 저장 위치 | `/etc/passwd` (각 사용자 행에 GID로) | `/etc/group` (그룹별 멤버 목록) |
-| 변경 명령 | `usermod -g <group>` | `usermod -aG <group>` |
+| Primary | **항상 1개** | "본인 호수" — 새 파일 만들면 이 모임 소유가 됨 |
+| Supplementary | **0개 이상** | "추가 가입 모임" — 그 모임 자료실 들어갈 권한 |
 
-### 정보가 저장되는 파일
+### 2. 정보가 어디 적혀 있나
+
 ```
-/etc/passwd   사용자 목록 (이름, UID, primary GID, 홈디렉토리, 셸)
-/etc/group    그룹 목록 (이름, GID, 멤버 사용자들)
-/etc/shadow   암호 해시 (root만 읽기 가능)
+/etc/passwd   주민 명단 (이름, 호수번호, 거주 위치, 사용 셸)
+/etc/group    동호회 명단 (모임 이름, 멤버들)
+/etc/shadow   비밀번호 (관리자만 볼 수 있음)
 ```
 
-`/etc/passwd` 한 줄 예시:
+`/etc/passwd` 한 줄을 풀어보면:
 ```
 agent-admin:x:1001:1001:Agent Admin:/home/agent-admin:/bin/bash
-└─────┬────┘ │ │    │   └────┬────┘ └──────┬──────┘ └────┬────┘
-   이름      │ UID  │      설명           홈              로그인 셸
-             └─암호 └─primary GID
-             ('x' = 실제 해시는 /etc/shadow에)
+└────┬────┘ │ │    │   └─────┬───┘ └────────┬────────┘ └────┬───┘
+   주민이름   │ 사번 │       이름표        본인 집           기본 셸
+            │     본인 호수 (primary)
+            비밀번호 (실제는 shadow에 따로)
 ```
 
-## 자주 쓰는 명령
+## 한 번 보자 (Mac에서도 거의 됨)
 
 ```bash
-# 현재 사용자 + 그룹 확인
-id
-# 출력: uid=1001(agent-admin) gid=1001(agent-admin) groups=1001(agent-admin),1002(agent-common),1003(agent-core)
+id                          # 본인 정보
+id agent-admin              # 특정 주민 정보
+groups agent-admin          # 가입한 모임들
+cat /etc/passwd | head      # 주민 명단 일부 (Mac도 비슷한 파일)
+cat /etc/group | head       # 모임 명단 일부
+```
 
-# 특정 사용자 정보
-id agent-admin
+## 주민·모임 만들기 (B1-1에서 필요)
 
-# 사용자 생성 (홈 디렉토리 + 기본 셸 지정)
-sudo useradd -m -s /bin/bash agent-admin
-# -m: 홈 만들기 (/home/agent-admin/)
-# -s: 로그인 셸 지정
-
-# 비밀번호 설정
-sudo passwd agent-admin
-
-# 그룹 생성
+```bash
+# 모임 만들기
 sudo groupadd agent-common
 sudo groupadd agent-core
 
-# 사용자를 그룹에 추가 (supplementary)
+# 주민 등록 (본인 집 + 기본 셸 지정)
+sudo useradd -m -s /bin/bash agent-admin
+# -m: 본인 집(home) 만들기
+# -s: 사용할 셸
+
+# 주민을 모임에 가입시키기
 sudo usermod -aG agent-common agent-admin
-# -a (append): 기존 그룹 유지하고 추가
-# -G (groups): supplementary group 지정
-# ★ -a 빼먹으면 기존 supplementary 다 날리고 새것만 됨 (자주 하는 실수!)
-
-# 사용자가 속한 그룹 확인
-groups agent-admin
-
-# 그룹의 멤버 확인
-getent group agent-core
+sudo usermod -aG agent-core agent-admin
+# -aG: "기존 모임 유지하고 추가"
+# ★ -a 빼면 다 날림 — 흔한 실수!
 ```
 
-## 흔한 오해
+## 자주 헷갈리는 것
 
-- ❌ `usermod -G newgroup user` → 이러면 user의 기존 supplementary group **다 사라짐**. **`-aG` 써야 추가됨**.
-- ❌ "primary group과 사용자명은 항상 같다" → 보통 자동으로 그렇게 만들어지지만 아닐 수도 있음 (`useradd -g existing_group`).
-- ❌ "그룹 변경하면 즉시 반영" → ✅ 새 셸/SSH 접속해야 적용. 기존 셸은 옛 그룹 보유. (`newgrp <group>`로 새 셸 띄우면 즉시 적용)
-- ❌ "root와 sudo는 같다" → 비슷하지만 다름. sudo는 "root처럼 행동할 수 있는 권한 위임" + 감사로그 남음.
-- ❌ "agent-test 사용자는 agent-core가 아니니까 코어 데이터 못 봄" → ✅ 맞지만 단, **공유 디렉토리에 그 파일이 있으면** 디렉토리 권한에 따라 우회될 수도 있음 → 다음 노트 [file-permissions.md](./file-permissions.md) 참조
+- **`usermod -G` 만 써도 추가될 줄 안다** → ❌ **기존 모임 다 날아감**. 반드시 `-aG`.
+- **모임 가입 직후 바로 적용** → ❌ 새 셸/SSH 다시 접속해야 적용.
+- **root와 sudo는 같은 것** → 비슷하지만 다름. sudo는 "잠깐 root처럼 행동" + 기록 남음.
 
 ## 이번 과제 매핑
 
 ```
-사용자          Primary Group     Supplementary Groups
-─────────────  ────────────────  ─────────────────────────────
-agent-admin    agent-admin       agent-common, agent-core
-agent-dev      agent-dev         agent-common, agent-core
-agent-test     agent-test        agent-common
+주민          본인 호수        가입 모임
+agent-admin   agent-admin      agent-common, agent-core
+agent-dev     agent-dev        agent-common, agent-core
+agent-test    agent-test       agent-common
 ```
 
-→ `agent-test`는 `agent-core`에 없음 → `api_keys/`, `/var/log/agent-app/` 접근 불가 (이게 명세의 의도)
+**왜 이렇게?**
+- 셋 다 `agent-common` → 공유 폴더(`upload_files`)는 셋 다 접근
+- `agent-test`는 `agent-core` 빠짐 → 중요 폴더(`api_keys`, 로그) 못 봄
 
-## 관련 개념
-- [file-permissions.md](./file-permissions.md) — group 권한이 실제로 어떻게 작용하는지
-- (예정) acl.md — owner/group/other로 부족할 때 (B1-1 핵심)
+## 기술 용어 풀이
+
+- **UID (User ID)** — 주민 사번 (정수, 1001, 1002, …). root는 UID 0.
+- **GID (Group ID)** — 모임 번호.
+- **Primary group** — 본인 호수 (한 명당 1개).
+- **Supplementary group** — 추가 가입 모임 (여러 개 가능).
+- **shadow** — 비밀번호 해시만 따로 저장하는 파일 (보안용).
+
+## 더 알아보고 싶으면
+- 명령: `man useradd`, `man usermod`, `man groups`
+- 다음 노트: [file-permissions.md](./file-permissions.md) — 방마다 누가 들어올 수 있는지
 
 ## 출처
 - B1-1 (Layer 1.2)
 - 학습일: 2026-05-07
-- 참고: `man useradd`, `man usermod`, `man groups`, `man 5 passwd`
