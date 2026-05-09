@@ -141,21 +141,13 @@ xargs -0 -L1 < /proc/<other-PID>/environ   # 다른 프로세스 (보통 권한 
 
 셸 환경 모델은 미묘한 함정이 많다. 운영에서 실제로 부딪히는 종류만 정리한다.
 
-**SSH 진입 후 `.bashrc`가 안 읽혀서 alias가 안 먹는다**는 게 가장 흔한 첫 함정이다. SSH는 login shell을 띄우므로 `.bash_profile`만 읽힌다. `.bash_profile`에서 `.bashrc`를 source하지 않으면 alias·함수가 다 누락된다. 보통 새로 만든 사용자 계정에서 `.bash_profile`이 비어 있을 때 발생한다.
+가장 흔한 첫 함정은 SSH 진입 후 `.bashrc`가 안 읽혀서 alias가 안 먹는 현상이다. SSH는 login shell을 띄우므로 `.bash_profile`만 읽히는데, `.bash_profile`에서 `.bashrc`를 source하지 않으면 alias·함수가 다 누락된다. 새로 만든 사용자 계정에서 `.bash_profile`이 비어 있을 때 가장 자주 발생한다. 비슷한 맥락에서 non-interactive 셸에서는 alias가 기본적으로 안 먹는데, Bash가 non-interactive 셸에서 alias expansion을 끄기 때문이다 — 스크립트 안에서 alias를 정의해도 그 다음 줄에서 사용하려면 `shopt -s expand_aliases`를 먼저 set해야 한다.
 
-**non-interactive에서 alias가 안 먹는다**는 점도 자주 함정이다. Bash는 기본적으로 non-interactive 셸에서 alias expansion을 끈다 (`shopt expand_aliases`로 명시 활성화 필요). 그래서 스크립트 안에서 alias를 정의해도 그 다음 줄에서 사용할 수 없는 경우가 있다.
+운영 자동화의 가장 큰 함정은 cron의 PATH 부재다. cron은 `PATH=/usr/bin:/bin` 정도만 set하므로 `/usr/local/bin`이나 `~/.local/bin`에 설치된 도구는 모두 누락된다. `psql`이나 `aws` 같은 명령을 cron에서 호출하면 "command not found" 에러가 나는데, 같은 명령이 직접 셸에서는 잘 동작하니 디버깅이 어렵다. 해결은 (1) 스크립트에서 절대 경로 사용, (2) 스크립트 첫 줄에서 `PATH=...` 명시, (3) crontab 상단에 `PATH=...` 변수 정의 중 하나다. 비슷하게 `sudo`의 환경 reset도 자주 함정이 되는데, sudoers의 `env_reset` 기본 정책으로 거의 모든 환경 변수가 drop된다 — `--preserve-env`나 sudoers의 `env_keep` 명시가 필요하며, 보안상으로는 reset이 옳지만 "내 환경이 sudo에서 안 먹는다"는 혼란이 자주 생긴다.
 
-**cron의 PATH 부재**는 운영 자동화의 단골 함정이다. cron은 `PATH=/usr/bin:/bin` 정도만 set한다. `/usr/local/bin`, `~/.local/bin` 등에 설치된 도구는 모두 누락된다. 이를 모르고 `psql`이나 `aws` 같은 명령을 cron에서 호출하면 "command not found" 에러가 나는데, 같은 명령이 직접 셸에서는 잘 동작하니 디버깅이 어렵다. 해결은 (1) 스크립트에서 절대 경로 사용, (2) 스크립트 첫 줄에서 `PATH=...` 명시, (3) crontab 상단에 `PATH=...` 변수 정의 중 하나다.
+시그니처가 미묘한 함정 중 하나가 `export VAR=$(cmd)` 패턴이다. `cmd`가 실패해도 export는 성공으로 처리되는데, `export` 자체의 exit code는 마지막 명령의 것이 아니라 자기 자신의 success(0)다. 그래서 `set -e`와 조합해도 명령 실패가 잡히지 않으며, 안전하게 쓰려면 `VAR=$(cmd) || exit; export VAR`처럼 분리해야 한다. 또 다른 운영 사고로 환경 변수 size 한계가 있는데, `MAX_ARG_STRLEN`(보통 128KB) 또는 `ARG_MAX`(보통 2MB) 초과 시 `execve`가 `E2BIG`로 실패한다. 환경 변수에 거대한 데이터(Base64 인코딩된 인증서 등)를 넣는 안티패턴이 만나는 한계다.
 
-**`sudo`의 환경 reset**도 자주 함정이다. sudoers의 `env_reset` 기본 정책으로 거의 모든 환경 변수가 drop된다. `--preserve-env`나 sudoers의 `env_keep` 명시가 필요하다. 보안상으로는 reset이 옳지만, "내 환경이 sudo에서 안 먹는다"는 혼란이 자주 생긴다.
-
-**`export VAR=$(cmd)`의 함정**은 미묘하다. 이 패턴에서 `cmd`가 실패해도 export는 성공으로 처리된다 — `export` 자체의 exit code는 마지막 명령의 것이 아니라 자기 자신의 success(0)다. 그래서 `set -e`와 조합해도 명령 실패가 잡히지 않는다. 안전하게 쓰려면 분리해야 한다 — `VAR=$(cmd) || exit; export VAR`.
-
-**환경 변수 size 한계**가 가끔 운영 사고를 만든다. `MAX_ARG_STRLEN`(보통 128KB) 또는 `ARG_MAX`(보통 2MB) 초과 시 `execve`가 `E2BIG`로 실패한다. 환경 변수에 거대한 데이터(Base64 인코딩된 인증서 등)를 넣는 안티패턴이 만나는 한계다.
-
-**PATH injection 보안 이슈**는 sudo로 실행되는 스크립트에서 발생한다. 스크립트가 `cmd`처럼 상대 경로로 명령을 호출하면 공격자가 자기 디렉토리를 PATH 앞쪽에 두고 같은 이름의 트로이목마를 둘 수 있다. sudoers의 `secure_path` 옵션으로 방어한다.
-
-**배포판별 default startup의 차이**는 이식성 문제를 만든다. Debian의 `/etc/skel/.bashrc`, RHEL의 `/etc/profile.d/`, macOS Bash 3.x의 다른 동작 — 모두 미묘한 차이가 있다. 한 배포판에서 동작한 셸 설정이 다른 배포판에서 깨지는 일이 있다.
+보안 측면에서는 PATH injection이 sudo로 실행되는 스크립트의 위협이다. 스크립트가 `cmd`처럼 상대 경로로 명령을 호출하면 공격자가 자기 디렉토리를 PATH 앞쪽에 두고 같은 이름의 트로이목마를 둘 수 있는데, sudoers의 `secure_path` 옵션으로 방어한다. 마지막으로 배포판별 default startup의 차이는 이식성 문제를 만드는데, Debian의 `/etc/skel/.bashrc`, RHEL의 `/etc/profile.d/`, macOS Bash 3.x의 다른 동작 — 모두 미묘한 차이가 있어 한 배포판에서 동작한 셸 설정이 다른 배포판에서 깨지는 일이 있다.
 
 ## B1-1 매핑
 
@@ -188,19 +180,13 @@ export LC_ALL=C
 
 ## 인접 토픽
 
-셸 환경 모델의 확장 학습으로 다음 토픽들이 가치 있다.
+셸 환경 모델의 응용은 환경 관리·보안·개발 편의의 세 축으로 정리해 볼 수 있다.
 
-**systemd unit의 `Environment=` / `EnvironmentFile=`**는 서비스 환경 관리의 현대적 표준이다. systemd로 관리되는 서비스는 셸 startup 파일에 의존하지 않고 unit 파일에서 환경을 명시한다. 의존성·격리·관측이 모두 더 명시적이다.
+서비스 운영의 현대적 표준은 systemd unit의 `Environment=` / `EnvironmentFile=`이다. systemd로 관리되는 서비스는 셸 startup 파일에 의존하지 않고 unit 파일에서 환경을 명시하는데, 의존성·격리·관측이 모두 더 명시적이라 운영 가시성이 높아진다. 비슷한 맥락에서 PAM 기반의 `/etc/environment`는 모든 로그인에 set되는 환경 변수 파일로, 셸 종류와 무관하게 적용되며 KEY=VALUE 단순 형식만 지원한다.
 
-**`/etc/environment`**는 PAM이 모든 로그인에 set하는 환경 변수 파일이다. 셸 종류와 무관하게 적용되며, KEY=VALUE 단순 형식만 지원한다 (셸 문법 없음).
+개발자 편의 측면에서는 dotenv 패턴과 디렉토리별 환경 전환 도구가 자주 만난다. 프로젝트별 `.env` 파일에 환경 변수를 두고 코드가 로드하는 dotenv 패턴은 개발 편의는 좋지만 권한 관리·gitignore·secret 분리 등 보안 주의가 필수다. 한편 direnv·mise·asdf 같은 도구는 디렉토리별 자동 환경 전환을 제공하는데, 프로젝트 디렉토리에 들어가면 자동으로 그 환경(Node 버전, Python venv 등)이 set되고 나가면 복원된다. 멀티 프로젝트 작업 시 매우 유용하다.
 
-**dotenv 패턴**은 프로젝트별 `.env` 파일에 환경 변수를 두고 코드가 로드하는 방식이다. 개발 편의는 좋지만 보안상 주의해야 한다 — 권한 관리, gitignore, secret 분리 등이 필수다.
-
-**direnv / mise / asdf**는 디렉토리별 자동 환경 전환 도구다. 프로젝트 디렉토리에 들어가면 자동으로 그 프로젝트의 환경(Node 버전, Python venv 등)이 set되고, 나가면 복원된다. 멀티 프로젝트 작업 시 매우 유용하다.
-
-**Secrets management**는 환경 변수의 secret 저장이 안티패턴인 이유와 대안을 다룬다. 환경 변수는 `/proc/PID/environ`으로 노출되고 child process에 자동 전파되므로 secret을 두기에 안전하지 않다. HashiCorp Vault, AWS Secrets Manager, 1Password CLI 같은 전용 도구를 사용하는 게 표준이다.
-
-**shellcheck**는 셸 스크립트의 정적 분석 도구다. 환경 변수 quote 누락, 잘못된 비교, 위험한 패턴 등을 자동 검출한다. 셸 스크립트를 작성한다면 거의 필수 도구다.
+보안 측면에서는 환경 변수의 secret 저장이 안티패턴인 이유를 짚어둘 가치가 있다. 환경 변수는 `/proc/PID/environ`으로 노출되고 child process에 자동 전파되므로 secret을 두기에 안전하지 않으며, HashiCorp Vault·AWS Secrets Manager·1Password CLI 같은 전용 도구를 사용하는 게 현대적 표준이다. 마지막으로 셸 스크립트를 다루는 모든 작업에 사실상 필수인 도구가 shellcheck로, 환경 변수 quote 누락·잘못된 비교·위험한 패턴 등을 자동 검출한다.
 
 ## 참고
 
