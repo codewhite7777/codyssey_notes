@@ -44,7 +44,7 @@ codyssey_notes/
 
 별도 레포로 분리된 과제 산출물:
 ```
-github.com/codewhite7777/codyssey_b1_1   ← B1-1 실제 산출물 (코드·setup·docs)
+github.com/codewhite7777/codyssey_b1_1   ← B1-1 실제 산출물 (✅ 생성됨, 구현 미시작)
 github.com/codewhite7777/codyssey_b1_2   ← B1-2 (예정)
 ...
 ```
@@ -92,7 +92,7 @@ github.com/codewhite7777/codyssey_b1_2   ← B1-2 (예정)
 
 | ID | 과제 | 상태 | 학습 노트 |
 |---|---|---|---|
-| B1-1 | 시스템 관제 자동화 스크립트 | 🟡 학습 중 | [codyssey_b1_1_study/](./codyssey_b1_1_study/) (10개) |
+| B1-1 | 시스템 관제 자동화 스크립트 | 🟡 학습 중 | [codyssey_b1_1_study/](./codyssey_b1_1_study/) (10개) + [codyssey_b1_1](https://github.com/codewhite7777/codyssey_b1_1) |
 | B1-2 | 프로세스·리소스 트러블슈팅 | 🔵 시작 전 | — |
 | B1-3 | 파일 기반 가계부 | 🔵 시작 전 | — |
 | B1-4 | Git 협업 워크플로우 | 🔵 시작 전 | — |
