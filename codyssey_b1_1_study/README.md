@@ -23,9 +23,16 @@
 | [firewall-ufw-vs-firewalld.md](./firewall-ufw-vs-firewalld.md) | netfilter layer, ufw·firewalld 비교 |
 | [posix-acl.md](./posix-acl.md) | 9비트 한계, ACL 항목·mask·default ACL |
 
-## Layer 3-5 (예정)
+## Layer 3 — 자원 관측
 
-- Layer 3 — 자원 관측 (top·ps·free·df·`/proc`)
+| 노트 | 핵심 주제 |
+|---|---|
+| [cpu-measurement.md](./cpu-measurement.md) | `/proc/stat` 두 시점 차이, top vs ps의 의미 차이 |
+| [memory-measurement.md](./memory-measurement.md) | free 출력 해석, available vs used, RSS vs VSZ |
+| [disk-usage-df-vs-du.md](./disk-usage-df-vs-du.md) | df(파일시스템) vs du(디렉토리), inode 고갈 |
+
+## Layer 4-5 (예정)
+
 - Layer 4 — Bash 스크립팅 (exit code, `set -euo pipefail`, trap)
 - Layer 5 — 자동화 & 운영 (cron, logrotate)
 
