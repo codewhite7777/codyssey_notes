@@ -1,12 +1,59 @@
-# 사용자·그룹·신원 (Identity)
+# 사용자와 그룹
 
-> **TLDR** · B1-1 명세는 **3개 사용자(agent-admin/dev/test) + 2개 그룹(agent-common/core) + 특정 멤버십**을 요구. 핵심 사고 포인트는 `usermod -G` 함정 — 반드시 `-aG`(append) 명시. agent-test는 의도적으로 `agent-core`에서 빠져 production 자격 증명 접근 차단.
+> **한 줄로** · 한 서버에서 일하는 사람들의 **역할을 나누고** 각자 들어갈 수 있는 폴더를 분리하는 작업. 운영·개발·테스트 세 역할을 만들고, **테스트 담당자는 실제 비밀번호·로그에 접근 못 하게** 막는 게 핵심.
 
 ---
 
 ## 과제 요구사항
 
-### 명세 명문 (B1-1 spec)
+### 회사 비유로 이해하기
+
+이 과제는 회사의 부서·권한 구조와 비슷합니다. 한 회사에 세 명의 직원이 있다고 상상하세요.
+
+| 직원 | 사용자 이름 | 무슨 일을 하나? |
+|---|---|---|
+| 👔 운영팀 | `agent-admin` | 서버 관리, 정해진 시간에 자동 작업 실행 |
+| 👨‍💻 개발팀 | `agent-dev` | 모니터링 스크립트(monitor.sh) 같은 도구 작성 |
+| 🧪 QA팀 | `agent-test` | 테스트 담당 (실제 운영 데이터는 보면 안 됨) |
+
+그리고 두 개의 "권한 그룹"을 만듭니다 — 회사의 공용 공간과 보안 구역처럼.
+
+| 그룹 | 비유 | 누가 들어갈 수 있나 |
+|---|---|---|
+| 🌐 `agent-common` | 회의실·휴게실 (모두 사용) | 운영팀, 개발팀, QA팀 |
+| 🔐 `agent-core` | 인사팀·금고실 (자격자만) | 운영팀, 개발팀 (QA팀 ❌) |
+
+### 관계 그림
+
+```mermaid
+graph LR
+    A[👔 운영팀<br/>agent-admin]
+    D[👨‍💻 개발팀<br/>agent-dev]
+    T[🧪 QA팀<br/>agent-test]
+
+    A -->|소속| CM[🌐 공유 그룹<br/>agent-common<br/>모두 같이 쓰는 공간]
+    D -->|소속| CM
+    T -->|소속| CM
+
+    A -->|소속| CO[🔐 핵심 그룹<br/>agent-core<br/>중요 데이터 접근권]
+    D -->|소속| CO
+
+    style CM fill:#cce5ff
+    style CO fill:#ffe6cc
+    style T fill:#fff0f0
+```
+
+### 누가 어디에 들어갈 수 있나
+
+| 직원 | 📁 공유 폴더<br/>(upload_files) | 🔑 비밀번호 폴더<br/>(api_keys) | 📊 모니터링 로그<br/>(/var/log/agent-app) |
+|---|:---:|:---:|:---:|
+| 👔 운영팀 | ✅ 가능 | ✅ 가능 | ✅ 가능 |
+| 👨‍💻 개발팀 | ✅ 가능 | ✅ 가능 | ✅ 가능 |
+| **🧪 QA팀** | ✅ 가능 | **❌ 차단** | **❌ 차단** |
+
+**왜 이렇게?** 테스트 담당자가 실수로 진짜 비밀번호나 운영 로그를 건드리면 사고가 날 수 있습니다. 회사에서 신입 인턴이 회사 금고에 못 들어가게 막는 것과 같은 개념입니다.
+
+### 명세 원문 (참고)
 
 > **생성 계정**
 > - `agent-admin` (운영/관리, cron 실행자)
@@ -17,46 +64,21 @@
 > - `agent-common`: admin, dev, test
 > - `agent-core`: admin, dev
 
-### 사용자 ↔ 그룹 관계도
-
-```mermaid
-graph LR
-    A[agent-admin<br/>운영·cron 실행자]
-    D[agent-dev<br/>개발자·monitor.sh 작성]
-    T[agent-test<br/>QA]
-
-    A -->|멤버| CM[agent-common<br/>공유 그룹 — upload_files RW]
-    D -->|멤버| CM
-    T -->|멤버| CM
-
-    A -->|멤버| CO[agent-core<br/>핵심 그룹 — api_keys·log RW]
-    D -->|멤버| CO
-
-    style CM fill:#cce5ff
-    style CO fill:#ffe6cc
-    style T fill:#fff0f0
-```
-
-### 권한 의도 (누가 무엇에 접근?)
-
-| 사용자 | upload_files (common 그룹) | api_keys (core 그룹) | /var/log/agent-app (core) |
-|---|---|---|---|
-| agent-admin | ✅ RW | ✅ RW | ✅ RW |
-| agent-dev | ✅ RW | ✅ RW | ✅ RW |
-| **agent-test** | ✅ RW | **❌ 차단** | **❌ 차단** |
-
-→ **test는 production 자격 증명·로그 접근 차단** (보안 격리 의도)
-
-### 검증 기준
+### 잘 됐는지 확인하는 방법
 
 ```bash
-id agent-admin                 # uid·gid·groups 모두 출력
+# 1. 각 직원의 정보 확인 (어느 그룹에 속하는지)
+id agent-admin
 id agent-dev
 id agent-test
-getent group agent-common      # 멤버: admin, dev, test
-getent group agent-core        # 멤버: admin, dev
+
+# 2. 그룹 멤버 확인
+getent group agent-common      # 운영·개발·QA 셋 다 보여야 함
+getent group agent-core        # 운영·개발만 (QA 없어야 함)
+
+# 3. QA 담당자가 비밀번호 폴더 접근 시도 → 차단되어야 함
 sudo -u agent-test ls /home/agent-admin/agent-app/api_keys
-# → EACCES (Permission denied) 기대
+# 결과 기대: "Permission denied" (접근 거부)
 ```
 
 ---
