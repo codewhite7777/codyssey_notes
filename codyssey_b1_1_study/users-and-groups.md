@@ -250,25 +250,6 @@ sequenceDiagram
 
 ---
 
-## 인접 토픽 (선택)
-
-<details>
-<summary><b>고급 — capabilities · user namespace · PAM · NSS · systemd-homed (펼치기)</b></summary>
-
-**POSIX capabilities** — root 권한을 39+개 단위로 쪼갠 메커니즘. setuid의 안전한 대안 (`cap_net_bind_service`로 1024 미만 포트 바인딩만 허용 등).
-
-**User namespace** — 컨테이너 안 root가 호스트의 일반 사용자로 매핑되는 격리. `/proc/PID/uid_map`. rootless container의 핵심.
-
-**PAM (Pluggable Authentication Modules)** — 인증 단계의 모듈식 구성. SSH·sudo·screen unlock이 모두 PAM 경유. 2FA·패스워드 정책이 PAM 모듈로 구현.
-
-**NSS (Name Service Switch)** — 사용자·그룹 lookup의 추상화. `/etc/nsswitch.conf`로 파일·LDAP·SSSD 등 백엔드 순서 정의. 회사 환경의 LDAP 사용자가 `getent`로 보이는 이유.
-
-**systemd-homed** — LUKS 암호화된 portable 홈으로 사용자 관리. `/etc/passwd` 의존도 ↓, 노트북 도난 시 데이터 보호.
-
-</details>
-
----
-
 ## 참고
 
 - `man 5 passwd`, `man 5 group`, `man 5 shadow`

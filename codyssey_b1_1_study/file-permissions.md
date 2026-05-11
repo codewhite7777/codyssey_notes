@@ -1,6 +1,6 @@
 # 파일 권한
 
-> **한 줄로** · 모든 파일·폴더에는 **"누가 들어와서 뭘 할 수 있는지" 적힌 출입 표찰**이 붙어 있다. B1-1은 monitor.sh를 운영팀만 실행하게, 비밀번호 폴더는 핵심 그룹만 들어가게 설정 요구. 표찰은 숫자 3개(예: `750`)로 표현.
+> **한 줄로** · 모든 파일·폴더에는 **"누가 들어와서 뭘 할 수 있는지" 적힌 출입 표찰**이 붙어 있다. B1-1 명세는 `monitor.sh` 권한 `750 (rwxr-x---)`, `upload_files`는 group=agent-common R/W 가능, `api_keys`와 `/var/log/agent-app`은 **group=agent-core ONLY** R/W 가능을 요구.
 
 ---
 
@@ -32,43 +32,49 @@
 | 👥 group | 같은 그룹에 속한 사람들 | 같은 부서 동료 |
 | 🌍 other | 그 외 모든 사람 | 외부인 |
 
-### 명세가 요구하는 권한 설계
+### 명세가 요구하는 권한 (verbatim)
 
-B1-1은 다음 네 가지 권한 구조를 요구합니다.
+명세 원문에서 권한 관련 요구사항:
 
-**📜 monitor.sh 스크립트** (운영팀이 자동으로 실행할 도구)
+> **monitor.sh** 파일 위치/권한 정책
+> - 경로: `$AGENT_HOME/bin/monitor.sh`
+> - 소유자: `agent-dev`
+> - 그룹: `agent-core`
+> - 권한: `750` (`rwxr-x---`)
+>
+> **디렉토리 접근 권한** (핵심 정책)
+> - `upload_files`: group=agent-common, **R/W 가능**
+> - `api_keys` 및 `/var/log/agent-app`: group=agent-core **ONLY**, **R/W 가능**
 
-| 사람 | 보기 (r) | 수정 (w) | 실행 (x) |
+### 누가 무엇을 할 수 있나 (상세)
+
+**📜 monitor.sh — `750` (rwxr-x---)**
+
+| 사람 | r 보기 | w 수정 | x 실행 |
 |---|:---:|:---:|:---:|
-| 👤 주인 (개발팀 = agent-dev) | ✅ | ✅ | ✅ |
-| 👥 같은 그룹 (운영팀·개발팀 = agent-core) | ✅ | ❌ | ✅ |
-| 🌍 다른 사람 (QA 등) | ❌ | ❌ | ❌ |
+| 👤 주인 (`agent-dev`) | ✅ | ✅ | ✅ |
+| 👥 그룹 (`agent-core`) | ✅ | ❌ | ✅ |
+| 🌍 다른 사람 | ❌ | ❌ | ❌ |
 
-→ 개발팀이 작성·수정, 운영팀이 cron으로 실행, QA는 못 봄.
+→ 개발팀이 작성·수정, 운영팀이 cron으로 실행, QA는 접근 불가.
 
-**🔑 비밀번호 폴더 (api_keys)** — 핵심 그룹(agent-core)만 들어갈 수 있음
-**📁 공유 폴더 (upload_files)** — 공유 그룹(agent-common) 모두 쓸 수 있음
-**📊 로그 폴더 (/var/log/agent-app)** — 핵심 그룹만 쓸 수 있음 + setgid (아래 설명)
+**🔑 `api_keys` 폴더 — agent-core ONLY R/W**
 
-### 권한 관계 그림
+| 사람 | r 목록 보기 | w 파일 추가·삭제 | x 들어가기 |
+|---|:---:|:---:|:---:|
+| 👥 그룹 (`agent-core`) | ✅ | ✅ | ✅ |
+| 🌍 다른 사람 (`agent-test` 포함) | ❌ | ❌ | ❌ |
 
-```mermaid
-graph LR
-    M[📜 monitor.sh<br/>'750']
-    M --> O1[👤 주인 agent-dev<br/>읽기 수정 실행]
-    M --> G1[👥 그룹 agent-core<br/>읽기 실행]
-    M --> X1[🌍 다른 사람<br/>금지]
+**📁 `upload_files` 폴더 — agent-common R/W**
 
-    K[🔑 api_keys<br/>'770']
-    K --> O2[👤 주인 agent-admin<br/>전부 가능]
-    K --> G2[👥 그룹 agent-core<br/>전부 가능]
-    K --> X2[🌍 다른 사람<br/>금지]
+| 사람 | r 목록 보기 | w 파일 추가·삭제 | x 들어가기 |
+|---|:---:|:---:|:---:|
+| 👥 그룹 (`agent-common`, 셋 다 소속) | ✅ | ✅ | ✅ |
+| 🌍 다른 사람 | ❌ | ❌ | ❌ |
 
-    style M fill:#cce5ff
-    style K fill:#ffe6cc
-    style X1 fill:#fff0f0
-    style X2 fill:#fff0f0
-```
+**📊 `/var/log/agent-app` 폴더 — agent-core ONLY R/W + setgid**
+
+api_keys와 동일 권한 + setgid 비트 (새 로그 파일도 자동으로 `agent-core` 그룹 상속).
 
 ### 잘 됐는지 확인하는 방법
 
@@ -198,52 +204,35 @@ graph LR
 
 ### 파일 vs 폴더 — 같은 글자가 다른 뜻
 
-`r·w·x`라는 같은 표시가 파일이냐 폴더냐에 따라 의미가 달라집니다. 이게 자주 헷갈리는 부분이에요.
+`r·w·x`라는 같은 표시가 파일이냐 폴더냐에 따라 의미가 달라집니다.
 
-```mermaid
-graph LR
-    R[r 권한] --> RF[📄 파일에서<br/>내용 읽기]
-    R --> RD[📁 폴더에서<br/>안의 목록 보기]
-
-    W[w 권한] --> WF[📄 파일에서<br/>내용 수정]
-    W --> WD[📁 폴더에서<br/>파일 추가·삭제]
-
-    X[x 권한] --> XF[📄 파일에서<br/>실행 가능]
-    X --> XD[📁 폴더에서<br/>안으로 들어가기]
-
-    style RD fill:#ffe6cc
-    style WD fill:#ffe6cc
-    style XD fill:#ffe6cc
-```
+| 권한 | 📄 파일에서 | 📁 폴더에서 |
+|:---:|---|---|
+| **r** (read) | 내용 읽기 | 안의 파일 목록 보기 |
+| **w** (write) | 내용 수정·저장 | 새 파일 추가·삭제 |
+| **x** (execute) | 실행 (스크립트일 때) | 안으로 들어가기 (`cd`) |
 
 > [!WARNING]
-> **흔한 함정**: 폴더에 `r`만 있고 `x`가 없으면 "안에 뭐 있는지는 보이는데" 안의 파일에는 못 들어갑니다. 폴더의 `x`가 진짜 "들어가는 권한". `r`보다 `x`가 더 중요한 경우가 많아요.
+> **흔한 함정**: 폴더에 `r`만 있고 `x`가 없으면 "안에 뭐 있는지는 보이는데" 안의 파일에는 못 들어갑니다. 폴더의 `x`가 진짜 "들어가는 권한".
 
 ### 컴퓨터는 어떻게 결정하나?
 
-당신이 파일을 만지려고 하면 컴퓨터는 다음 순서로 확인합니다.
+접근 시도 → 누구냐에 따라 **하나의** 권한 비트만 확인하고 결정.
 
 ```mermaid
-flowchart TD
-    A[누가 파일 접근 시도] --> B{root 사용자?}
-    B -->|예| OK[✅ 항상 허용]
-    B -->|아니오| C{내가 주인?}
-    C -->|예| D[주인 권한 비트 확인]
-    D -->|허용| OK
-    D -->|금지| NO[❌ Permission denied]
-    C -->|아니오| E{같은 그룹 멤버?}
-    E -->|예| F[그룹 권한 비트 확인]
-    F -->|허용| OK
-    F -->|금지| NO
-    E -->|아니오| G[다른 사람 권한 비트 확인]
-    G -->|허용| OK
-    G -->|금지| NO
+flowchart LR
+    A[접근 시도] --> B{누구?}
+    B -->|주인| O[👤 주인 비트 확인]
+    B -->|같은 그룹| G[👥 그룹 비트 확인]
+    B -->|그 외| X[🌍 다른사람 비트 확인]
+    O --> R[허용 또는 거부]
+    G --> R
+    X --> R
 
-    style OK fill:#ccffcc
-    style NO fill:#ffcccc
+    style R fill:#cce5ff
 ```
 
-★ **중요**: 매칭된 **첫 단계**만 검사합니다. 내가 주인이면 그룹·다른사람 비트는 무시. 주인 비트가 `---`인데 그룹은 `rwx`여도, 주인은 여전히 못 함.
+★ **핵심**: 매칭된 **첫 단계만 검사**. 주인이면 그룹·다른사람 비트는 무시. 즉 주인이 `---`인데 그룹이 `rwx`여도, 주인은 못 함.
 
 ### umask — 새 파일의 자동 권한
 
@@ -255,25 +244,6 @@ flowchart TD
 | `077` (보안 환경) | `600` (rw-------) | 주인만 보고 수정, 나머지 아무것도 |
 
 `umask`는 거꾸로 작동합니다 — "**삭제할 권한**" 의미. 022면 그룹·다른사람의 쓰기 권한이 자동으로 빠짐.
-
----
-
-## 인접 토픽 (선택)
-
-<details>
-<summary><b>고급 — ACL · MAC · capabilities · immutable bit (펼치기)</b></summary>
-
-**POSIX ACL** — 9비트로 표현 불가능한 권한 요구("그룹 A는 RW, 그룹 B는 R") 처리하는 확장. `setfacl`/`getfacl` 명령. 다음 노트 [posix-acl.md](./posix-acl.md)에서 자세히.
-
-**MAC (Mandatory Access Control)** — SELinux·AppArmor 같은 강제 정책 layer. 일반 권한(DAC) 위에 추가되며, root조차 우회 못 함. 보안 강화 환경의 표준.
-
-**POSIX capabilities** — root 권한을 39+개 단위로 쪼갠 것. `cap_net_bind_service`(1024 미만 포트 바인딩만 허용) 같이 세밀한 부여. `setuid`의 안전한 대안.
-
-**Immutable bit** (`chattr +i file`) — root조차 수정·삭제 못 함. 시스템 무결성 보호용. 일반 `chmod`로는 보이지 않아 디버깅 시 함정.
-
-**Mount options** — `noexec`(파티션에서 실행 X), `nosuid`(setuid 무시), `nodev`(디바이스 노드 못 만듦). `/tmp`·외부 마운트에 자주 적용.
-
-</details>
 
 ---
 
