@@ -27,19 +27,24 @@
 
 > 나머지 11개 과제 정보 받으면 채워넣기.
 
-## 핵심 개념 (B1-1 현재)
+## 핵심 개념 (B1-1 — 21개 노트 모두 학습자 친화 패턴 적용)
 
-| Layer | 노트 |
-|---|---|
-| 1. Linux Foundation | [filesystem-tree](./codyssey_b1_1_study/filesystem-tree.md), [users-and-groups](./codyssey_b1_1_study/users-and-groups.md), [file-permissions](./codyssey_b1_1_study/file-permissions.md), [shell-environment](./codyssey_b1_1_study/shell-environment.md), [process-and-signals](./codyssey_b1_1_study/process-and-signals.md) |
-| 2. 보안 & 네트워킹 | [ssh-deep-dive](./codyssey_b1_1_study/ssh-deep-dive.md), [sshd-config](./codyssey_b1_1_study/sshd-config.md), [ports-and-listening](./codyssey_b1_1_study/ports-and-listening.md), [firewall-ufw-vs-firewalld](./codyssey_b1_1_study/firewall-ufw-vs-firewalld.md), [posix-acl](./codyssey_b1_1_study/posix-acl.md) |
+| Layer | 주제 | 노트 |
+|---|---|---|
+| 1. Linux Foundation | 파일·사용자·환경·프로세스 | [filesystem-tree](./codyssey_b1_1_study/filesystem-tree.md), [users-and-groups](./codyssey_b1_1_study/users-and-groups.md), [file-permissions](./codyssey_b1_1_study/file-permissions.md), [shell-environment](./codyssey_b1_1_study/shell-environment.md), [process-and-signals](./codyssey_b1_1_study/process-and-signals.md) |
+| 2. 보안 & 네트워킹 | SSH·방화벽·포트·ACL | [ssh-deep-dive](./codyssey_b1_1_study/ssh-deep-dive.md), [sshd-config](./codyssey_b1_1_study/sshd-config.md), [ports-and-listening](./codyssey_b1_1_study/ports-and-listening.md), [firewall-ufw-vs-firewalld](./codyssey_b1_1_study/firewall-ufw-vs-firewalld.md), [posix-acl](./codyssey_b1_1_study/posix-acl.md) |
+| 3. 자원 측정 | CPU·MEM·DISK 모니터링 | [cpu-measurement](./codyssey_b1_1_study/cpu-measurement.md), [memory-measurement](./codyssey_b1_1_study/memory-measurement.md), [disk-usage-df-vs-du](./codyssey_b1_1_study/disk-usage-df-vs-du.md) |
+| 4. Bash 스크립팅 | 기초·안전·흐름·치환·trap | [bash-fundamentals](./codyssey_b1_1_study/bash-fundamentals.md), [bash-set-safe](./codyssey_b1_1_study/bash-set-safe.md), [bash-control-flow](./codyssey_b1_1_study/bash-control-flow.md), [bash-substitution](./codyssey_b1_1_study/bash-substitution.md), [bash-trap](./codyssey_b1_1_study/bash-trap.md) |
+| 5. 자동화 & 로그 | cron·로그 회전 | [cron-fundamentals](./codyssey_b1_1_study/cron-fundamentals.md), [cron-environment-gotchas](./codyssey_b1_1_study/cron-environment-gotchas.md), [log-rotation](./codyssey_b1_1_study/log-rotation.md) |
+
+**공통 패턴**: 과제 요구사항 → 구현 방법 → 개념 / 명세 원문 정확 인용 / 회사 비유 + 이모지 / 4노드 이하 Mermaid / 일반인 친화 언어.
 
 ## 학습 자산
 - 학습 컨벤션: [`CLAUDE.md`](./CLAUDE.md)
 - 회고 노트: [`retrospectives/`](./retrospectives/)
-- B1-1 학습: [`codyssey_b1_1_study/`](./codyssey_b1_1_study/)
+- B1-1 학습: [`codyssey_b1_1_study/`](./codyssey_b1_1_study/) — 21개 노트
 
 ## 누적 통계
-- 완료: 0 / 15
-- 학습 시간 누적: 0h / ~600h (예상)
-- 정리한 노트 수: 10 (B1-1 Layer 1-2)
+- 완료: 0 / 15 (B1-1 코드 작성 완료, 평가 대기)
+- 학습 시간 누적: ~40h / ~600h (예상)
+- 정리한 노트 수: **21** (B1-1 Layer 1~5 전체)
