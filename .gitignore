@@ -1,12 +1,17 @@
 # 워크스페이스를 git init 했을 경우용
 # 각 과제 레포는 독립 git이므로 부모에서 추적하지 않음
 
-# Codyssey 과제 레포 격리 (B1-N, B2-N 등)
-# 주의: macOS는 case-insensitive 파일시스템이라 /B*/ 같은 광범위 패턴은
-# concepts/ 같은 정상 폴더까지 잡음. 따라서 정확한 prefix-숫자 패턴 사용.
-/B?-*/
-/A?-*/
-/C?-*/
+# Codyssey 과제 레포 격리 (codyssey_b1_1, codyssey_b1_2 등)
+# 각 과제는 자체 .git을 가지는 독립 레포로, codyssey_notes(부모)는 추적 X
+# 단 *_study 폴더는 codyssey_notes의 일부이므로 예외 처리
+/codyssey_b1_*/
+/codyssey_b2_*/
+/codyssey_a*_*/
+/codyssey_c*_*/
+!/codyssey_b1_*_study/
+!/codyssey_b2_*_study/
+!/codyssey_a*_*_study/
+!/codyssey_c*_*_study/
 
 # OS / 에디터
 .DS_Store

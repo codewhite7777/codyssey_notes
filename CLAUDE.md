@@ -4,12 +4,34 @@
 Codyssey 부트캠프 과제 15개를 통해 SW 엔지니어링 기초를 체득하는 학습 공간.
 **정답 도출보다 폭넓은 이해와 사고 과정 형성이 우선.**
 
-## 워크스페이스 구조
-- **부모 디렉토리** (`codyssey/`): 학습 컨텍스트 통합, Claude는 이 폴더에서 실행
-- **과제별 하위 디렉토리** (`B1-1/`, `B1-2/`, ...): 각각 독립 git 레포 (Codyssey 공식 명칭 사용)
-- **`concepts/`**: 과제 간 누적되는 개념 정리 — 학습 자산의 핵심
-- **`retrospectives/`**: 주차별 회고
-- **`INDEX.md`**: 15개 과제 진행 현황 보드
+## 워크스페이스 구조 (★ 갱신)
+
+```
+~/Desktop/codyssey/                         ← Mac 워크스페이스 (Claude 실행 위치)
+│
+├── codyssey_notes/  ─────► github.com/codewhite7777/codyssey_notes
+│   │                       (학습 자산 통합 — 코드 X)
+│   ├── README.md
+│   ├── INDEX.md                           # 15개 과제 진행 보드
+│   ├── CLAUDE.md                          # 이 파일
+│   ├── retrospectives/                    # 과제 간 회고
+│   ├── codyssey_b1_1_study/               # B1-1 학습 노트 묶음
+│   ├── codyssey_b1_2_study/  (예정)
+│   └── ...
+│
+├── codyssey_b1_1/  ─────► github.com/codewhite7777/codyssey_b1_1
+│   │                      (B1-1 산출물 — 코드만, 학습 노트 X)
+│   ├── README.md, docs/, bin/, setup/, evidence/
+│   └── .git
+│
+└── codyssey_b1_2/  (예정 — 과제별 독립 레포)
+```
+
+**두 레포의 역할 분리** (중요):
+- **codyssey_notes**: 학습 노트(과제별 `_study` 폴더로 묶음), INDEX, 회고, 컨벤션. **코드 X**.
+- **codyssey_b1_N**: 과제 산출물(monitor.sh, setup 스크립트, 문서, 증거). **학습 노트 X**.
+
+**왜 분리?** 클러스터 평가 시 가벼운 과제 레포만 clone, 학습 자료는 codyssey_notes에 별도 보관. 학습은 한 곳에 누적, 코드는 평가 단위로 격리.
 
 ## 학습 우선 원칙 (Learning-First) [필수]
 
@@ -55,12 +77,12 @@ Codyssey 부트캠프 과제 15개를 통해 SW 엔지니어링 기초를 체득
 - 예: `ufw` vs `firewalld`, `JSONL` vs `CSV`, `dataclass` vs 일반 class
 
 ### 4. 작업 후 개념 추출
-- 의미 있는 작업 마무리 시 학습 가능한 개념을 `concepts/<분야>/<주제>.md`에 정리
-- 양식: 정의 / 핵심 원리 / 예시 / 흔한 오해 / 관련 개념 / 출처
+- 의미 있는 작업 마무리 시 학습 가능한 개념을 `codyssey_b1_N_study/<주제>.md`에 정리 (과제별 study 폴더)
+- 양식: TLDR / 개요 / 왜 / 핵심 원리 / 한 번 보자 / 흔한 함정 / 과제 매핑 / 인접 토픽 / 참고
 - `/extract` 슬래시 명령으로 보조
 
 ### 5. 과제 간 연결을 명시
-- 새 과제 시작 시 `concepts/`와 `INDEX.md` 먼저 검토
+- 새 과제 시작 시 다른 `codyssey_b1_N_study/`와 `INDEX.md` 먼저 검토
 - "이건 B1-1에서 익힌 X와 연결됨" 식으로 명시적 연결
 - `/connect` 슬래시 명령으로 보조
 
@@ -78,13 +100,13 @@ Codyssey 부트캠프 과제 15개를 통해 SW 엔지니어링 기초를 체득
 **유지되는 것**: 코드 품질 기준 (타입, 테스트, 에러 처리, 보안), 도구 선호 (`fd`, `rg`, `bat`, `ast-grep`), 헤드리스 출력.
 
 ## 과제 수행 워크플로우 (권장)
-1. **명세 읽기** → 과제 폴더 `README.md`에 핵심 1페이지 요약
-2. **개념 식별** → 미지의 개념 추출, `concepts/`에 stub 생성
-3. **개념 학습** → 각 개념을 정의/원리/예시로 정리 (코드 작성 전)
-4. **설계 스케치** → 모듈/책임 분리 의사코드
-5. **점진적 구현** → 작은 단위 → 검증 → 다음 단위
-6. **회고** → `retrospectives/`에 한 페이지
-7. **개념 승격** → 잘 정리된 stub을 정식 개념 노트로 보강
+1. **명세 읽기** → 과제 레포(`codyssey_b1_N/`)의 `docs/spec.md`에 명세 verbatim 보존, `README.md`에 1페이지 요약
+2. **개념 식별** → 미지의 개념 추출, `codyssey_notes/codyssey_b1_N_study/`에 stub 생성
+3. **개념 학습** → 각 개념을 TLDR·원리·예시로 정리 (코드 작성 전)
+4. **설계 스케치** → 과제 레포에 setup·monitor 모듈 구조 의사코드
+5. **점진적 구현** → 과제 레포의 `bin/`, `setup/`에 작은 단위 → 검증 → 다음 단위
+6. **회고** → `codyssey_notes/retrospectives/`에 한 페이지
+7. **평가** → 클러스터에서 과제 레포만 git clone → setup·verify → 증거 수집
 
 ## 코드 작성 가이드 (학습 컨텍스트 변형)
 - **주석 평소보다 더 많이** — 회고 시 자기 학습 자료가 됨
@@ -100,9 +122,10 @@ Codyssey 부트캠프 과제 15개를 통해 SW 엔지니어링 기초를 체득
 - `/recap` — 세션 학습 요약 + 회고 노트 초안
 
 ## 파일 네이밍
-- 과제 레포: Codyssey 공식 명칭 (`B1-1`, `B1-2`, ...)
-- 개념 노트: `concepts/<분야>/<주제>.md` (kebab-case, 예: `cron-scheduling.md`)
-- 회고: `retrospectives/YYYY-MM-DD-<주제>.md`
+- 과제 레포: `codyssey_b1_1`, `codyssey_b1_2`, ... (snake_case)
+- 학습 노트 폴더: `codyssey_b1_N_study/` (과제명 + `_study`)
+- 학습 노트 파일: `codyssey_notes/codyssey_b1_N_study/<주제>.md` (kebab-case, 예: `ssh-deep-dive.md`)
+- 회고: `codyssey_notes/retrospectives/YYYY-MM-DD-<주제>.md`
 
 ## 언어
 - 학습 노트·회고·INDEX·CLAUDE.md: **한국어** (학생 학습 효율)
