@@ -31,9 +31,18 @@
 | [memory-measurement.md](./memory-measurement.md) | free 출력 해석, available vs used, RSS vs VSZ |
 | [disk-usage-df-vs-du.md](./disk-usage-df-vs-du.md) | df(파일시스템) vs du(디렉토리), inode 고갈 |
 
-## Layer 4-5 (예정)
+## Layer 4 — Bash 스크립팅
 
-- Layer 4 — Bash 스크립팅 (exit code, `set -euo pipefail`, trap)
+| 노트 | 핵심 주제 |
+|---|---|
+| [bash-fundamentals.md](./bash-fundamentals.md) | shebang, exit code, 변수·quoting, 특수 변수 |
+| [bash-set-safe.md](./bash-set-safe.md) | `set -euo pipefail` 깊이, ERR trap, 안전 패턴 |
+| [bash-control-flow.md](./bash-control-flow.md) | if/case, while/for, 함수, `local` |
+| [bash-substitution.md](./bash-substitution.md) | `$()`·`${var:-x}`·`${var%suffix}`·리다이렉션 |
+| [bash-trap.md](./bash-trap.md) | trap EXIT cleanup, ERR 추적, 시그널 무시 |
+
+## Layer 5 (예정)
+
 - Layer 5 — 자동화 & 운영 (cron, logrotate)
 
 ## 노트 양식
