@@ -1,5 +1,7 @@
 # 셸 환경과 초기화
 
+> **TLDR** · 셸 시작은 `(login × interactive)` 4-cell 매트릭스. SSH는 login → `.bash_profile`, 새 터미널은 non-login → `.bashrc`, cron은 non-interactive → **어느 init도 안 읽음** (PATH 거의 비어있음). 이게 cron 함정의 근본 원인.
+
 ## 개요
 
 셸은 사용자가 OS와 대화하는 가장 기본적인 인터페이스다. 우리가 키보드로 친 명령은 셸이 받아서 해석하고 자식 프로세스로 fork·exec해 실행한다. 그런데 셸은 단순한 명령 실행기가 아니라, 자기만의 환경(환경 변수·alias·함수·옵션)을 들고 다니는 프로세스이며, 그 환경이 어떻게 초기화되는지가 모든 자동화의 기반이 된다.
@@ -40,6 +42,24 @@ Bash 셸의 시작 동작은 두 차원의 조합으로 결정된다 — **login
 ## Startup 파일 로딩 순서
 
 각 시나리오마다 Bash가 source하는 파일이 다르다. 이 차이가 자동화의 함정의 절반을 만든다.
+
+```mermaid
+flowchart TD
+    A[셸 시작] --> B{login shell?}
+    B -->|Yes<br/>SSH·su -| C[/etc/profile<br/>+ /etc/profile.d/*]
+    C --> D{~/.bash_profile<br/>있음?}
+    D -->|있음| E[.bash_profile 읽음<br/>★ 보통 여기서 .bashrc도 source]
+    D -->|없음| F[.bash_login 또는<br/>.profile 읽음]
+
+    B -->|No| G{interactive?}
+    G -->|Yes<br/>새 터미널| H[/etc/bash.bashrc<br/>+ ~/.bashrc]
+    G -->|No<br/>스크립트·cron| I[★ 어느 init도 안 읽음<br/>PATH 거의 비어있음<br/>= cron 함정의 원인]
+
+    style I fill:#ffcccc
+    style E fill:#cce5ff
+    style F fill:#cce5ff
+    style H fill:#cce5ff
+```
 
 **Login + Interactive (예: SSH)** 의 경우, Bash는 먼저 `/etc/profile`을 읽고(보통 `/etc/profile.d/*.sh`를 모두 source한다), 그 다음 사용자 홈에서 `~/.bash_profile`을 찾는다. 만약 없으면 `~/.bash_login`을, 그것도 없으면 `~/.profile`을 읽는다. 셋 중 첫 번째 발견된 것 하나만 읽고 나머지는 무시된다. 중요한 점은 **`~/.bashrc`는 자동으로 안 읽힌다**는 사실이다 — 보통 관습적으로 `.bash_profile`에서 `.bashrc`를 source하도록 작성한다.
 
@@ -139,6 +159,9 @@ xargs -0 -L1 < /proc/<other-PID>/environ   # 다른 프로세스 (보통 권한 
 
 ## 흔한 함정
 
+> [!WARNING]
+> **cron 함정**: cron은 어떤 init 파일도 안 읽음. `PATH=/usr/bin:/bin` 정도만 set되어 `aws`·`psql`·`/usr/local/bin/*` 같은 명령이 "command not found". 해결: 스크립트에서 절대 경로 사용 또는 첫 줄에서 `PATH=...` 명시. SSH로 들어가서는 잘 동작하던 명령이 cron에서 안 되면 99% 이 함정이다.
+
 셸 환경 모델은 미묘한 함정이 많다. 운영에서 실제로 부딪히는 종류만 정리한다.
 
 가장 흔한 첫 함정은 SSH 진입 후 `.bashrc`가 안 읽혀서 alias가 안 먹는 현상이다. SSH는 login shell을 띄우므로 `.bash_profile`만 읽히는데, `.bash_profile`에서 `.bashrc`를 source하지 않으면 alias·함수가 다 누락된다. 새로 만든 사용자 계정에서 `.bash_profile`이 비어 있을 때 가장 자주 발생한다. 비슷한 맥락에서 non-interactive 셸에서는 alias가 기본적으로 안 먹는데, Bash가 non-interactive 셸에서 alias expansion을 끄기 때문이다 — 스크립트 안에서 alias를 정의해도 그 다음 줄에서 사용하려면 `shopt -s expand_aliases`를 먼저 set해야 한다.
@@ -180,6 +203,9 @@ export LC_ALL=C
 
 ## 인접 토픽
 
+<details>
+<summary><b>응용 토픽 — systemd Environment·/etc/environment·dotenv·direnv·secrets·shellcheck (펼치기)</b></summary>
+
 셸 환경 모델의 응용은 환경 관리·보안·개발 편의의 세 축으로 정리해 볼 수 있다.
 
 서비스 운영의 현대적 표준은 systemd unit의 `Environment=` / `EnvironmentFile=`이다. systemd로 관리되는 서비스는 셸 startup 파일에 의존하지 않고 unit 파일에서 환경을 명시하는데, 의존성·격리·관측이 모두 더 명시적이라 운영 가시성이 높아진다. 비슷한 맥락에서 PAM 기반의 `/etc/environment`는 모든 로그인에 set되는 환경 변수 파일로, 셸 종류와 무관하게 적용되며 KEY=VALUE 단순 형식만 지원한다.
@@ -187,6 +213,8 @@ export LC_ALL=C
 개발자 편의 측면에서는 dotenv 패턴과 디렉토리별 환경 전환 도구가 자주 만난다. 프로젝트별 `.env` 파일에 환경 변수를 두고 코드가 로드하는 dotenv 패턴은 개발 편의는 좋지만 권한 관리·gitignore·secret 분리 등 보안 주의가 필수다. 한편 direnv·mise·asdf 같은 도구는 디렉토리별 자동 환경 전환을 제공하는데, 프로젝트 디렉토리에 들어가면 자동으로 그 환경(Node 버전, Python venv 등)이 set되고 나가면 복원된다. 멀티 프로젝트 작업 시 매우 유용하다.
 
 보안 측면에서는 환경 변수의 secret 저장이 안티패턴인 이유를 짚어둘 가치가 있다. 환경 변수는 `/proc/PID/environ`으로 노출되고 child process에 자동 전파되므로 secret을 두기에 안전하지 않으며, HashiCorp Vault·AWS Secrets Manager·1Password CLI 같은 전용 도구를 사용하는 게 현대적 표준이다. 마지막으로 셸 스크립트를 다루는 모든 작업에 사실상 필수인 도구가 shellcheck로, 환경 변수 quote 누락·잘못된 비교·위험한 패턴 등을 자동 검출한다.
+
+</details>
 
 ## 참고
 
