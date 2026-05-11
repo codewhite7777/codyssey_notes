@@ -9,7 +9,7 @@
 
 | ID | 주제 | 분야 | 시간 | 상태 | 학습 노트 | 과제 레포 |
 |---|---|---|---|---|---|---|
-| B1-1 | 시스템 관제 자동화 스크립트 | Linux/OS | 40h | 🟡 | [`codyssey_b1_1_study/`](./codyssey_b1_1_study/) (10개) | [`codyssey_b1_1`](https://github.com/codewhite7777/codyssey_b1_1) |
+| B1-1 | 시스템 관제 자동화 스크립트 | Linux/OS | 40h | 🟢 | [`codyssey_b1_1_study/`](./codyssey_b1_1_study/) (21개) | [`codyssey_b1_1`](https://github.com/codewhite7777/codyssey_b1_1) — 코드 작성 완료, 테스트 대기 |
 | B1-2 | 프로세스·리소스 트러블슈팅 | Linux/OS | 40h | 🔵 | (예정) | `codyssey_b1_2` |
 | B1-3 | 파일 기반 가계부 | Python/Git | 60h | 🔵 | (예정) | `codyssey_b1_3` |
 | B1-4 | Git 협업 워크플로우 | Python/Git | 20h | 🔵 | (예정) | `codyssey_b1_4` (팀) |
