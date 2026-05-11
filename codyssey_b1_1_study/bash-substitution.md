@@ -1,350 +1,333 @@
 # Bash 치환·확장·리다이렉션
 
-> **TLDR** · `$(cmd)`(명령 치환)·`${var:-default}`(파라미터 확장)·`>`/`>>`/`<`/`2>&1`(리다이렉션)이 운영 스크립트의 일상 도구. 백틱 `` `cmd` `` 대신 `$(cmd)` 권장(중첩 가능, 읽기 쉬움). 파라미터 확장의 `${var:-x}`, `${var%suffix}`, `${var//pat/repl}` 패턴이 매우 강력.
+> **한 줄로** · `$(cmd)`로 **명령 결과 받기**, `${var:-default}`로 **변수 다듬기**, `>`/`>>`/`2>&1`로 **출력 보내기**. monitor.sh가 CPU/MEM/DISK를 측정·기록하는 매 줄이 이 3가지 도구로 구성. 백틱 `` `cmd` `` 대신 `$(cmd)` 사용.
 
-## 개요
+---
 
-Bash의 표현력 대부분은 치환·확장·리다이렉션에서 나온다. 단순한 `echo "Hello"` 너머의 모든 동적 동작 — 명령 결과를 변수에 받기, 변수의 부분 추출·치환, 파일로 출력 보내기 — 이 영역에 속한다. monitor.sh 같은 스크립트는 거의 모든 줄이 이 기능을 활용한다.
+## 과제 요구사항
 
-## 왜 알아야 하나
+### 이게 무슨 작업?
 
-`ps`의 출력에서 PID 추출, `df`의 5번째 컬럼에서 사용률 추출, 환경 변수의 default 값 처리, 명령 출력을 파일에 추가 등 — 운영 스크립트의 일상이 이 기능들이다. 정확히 알지 못하면 awk·sed 같은 외부 도구를 과도하게 호출해 느려지거나, 미묘한 quoting 함정에 빠진다.
+monitor.sh가 하는 일은 결국:
+1. **명령 실행 결과 받기** (top·free·df 출력)
+2. **결과에서 필요한 부분만 뽑기** (사용률 숫자만)
+3. **로그 파일에 저장** (>> monitor.log)
 
-## 명령 치환
+회사 비유:
+- 명령 치환 `$(cmd)` = **명령 결과를 "메모지에 옮겨 적기"**
+- 파라미터 확장 `${var/.../...}` = **메모를 다듬기·자르기**
+- 리다이렉션 `>>` = **결과를 보고서에 추가**
 
-명령의 stdout을 문자열로 받는다.
+### 명세 원문 (원본 그대로)
+
+> **로그 출력 형식**
+> ```
+> [2026-05-09 14:30:00] [RESOURCE MONITORING]
+> CPU Usage : 25.3%
+> MEM Usage : 5.2%
+> DISK Used : 23%
+> ```
+>
+> **결과를 monitor.log에 append**
+
+→ 명령 결과를 받아 → 다듬어 → 파일에 추가.
+
+### 무엇을 익히나
+
+| 도구 | 용도 |
+|---|---|
+| `$(cmd)` | 명령의 stdout을 문자열로 |
+| `${var:-default}` | 변수 default 값 처리 |
+| `${var%pattern}` | suffix 제거 |
+| `>>` | 파일에 추가 (append) |
+| `2>&1` | stderr를 stdout으로 합치기 |
+| Heredoc `<<EOF` | 여러 줄 입력 |
+
+### 잘 됐는지 확인하기
 
 ```bash
-NOW=$(date '+%Y-%m-%d %H:%M:%S')
-PID=$(pgrep -f agent_app.py | head -1)
-USERS=$(who | wc -l)
+# 명령 결과 받기
+NOW=$(date '+%Y-%m-%dT%H:%M:%S')
+echo "현재: $NOW"
 
-# trailing newline 제거됨 (Bash 특성)
-echo "현재 시간: $NOW"
+# 파라미터 확장 — % 제거
+PCT="80%"
+echo "${PCT%\%}"     # 80
 ```
 
-전통적 백틱 표기 `` `cmd` `` 보다 `$(cmd)`가 권장된다. 이유:
-- **중첩 가능**: `$(echo $(date))` vs 백틱은 escape 지옥
-- **가독성**: 백틱은 작은따옴표와 혼동
-- **POSIX 표준**
+---
+
+## 구현 방법
+
+### Step 1 — 명령 치환 `$(...)`
+
+명령의 출력을 문자열로 받기.
 
 ```bash
-# 백틱 (피하기)
-result=`echo \`date\``
+# 현재 시간
+NOW=$(date '+%Y-%m-%dT%H:%M:%S')
 
-# $() 권장
-result=$(echo $(date))
+# 프로세스 PID
+PID=$(pgrep -f agent-app | head -1)
+
+# 디스크 사용률
+DISK=$(df / | awk 'NR==2 {gsub("%",""); print $5}')
+
+echo "[$NOW] PID=$PID, DISK=${DISK}%"
 ```
 
-명령 치환은 서브셸에서 실행되므로 환경 변수 변경이 부모로 전파되지 않는다 (자주 함정).
+★ 백틱(`` `cmd` ``)은 옛 표기. `$(cmd)`가 권장 — 중첩 가능, 가독성 좋음.
 
-## 파라미터 확장
+### Step 2 — 파라미터 확장으로 값 다듬기
 
-변수에 대한 다양한 변환을 한 줄로 표현. Bash의 매우 강력한 기능.
-
-### Default 값 처리
+monitor.sh의 흔한 패턴:
 
 ```bash
-${var:-default}    # var unset/empty → "default", 아니면 $var
-${var:=default}    # 위와 같지만 var에도 default 할당
-${var:?error msg}  # var unset/empty → error msg 출력 후 종료
-${var:+value}      # var 있으면 "value", 아니면 빈 문자열
-```
-
-```bash
+# 환경 변수 default
 LOG_FILE="${AGENT_LOG_DIR:-/var/log/agent-app}/monitor.log"
-PORT="${PORT:?PORT 환경변수가 필요합니다}"   # 없으면 에러
+
+# 소수점 제거 (정수 비교 위해)
+CPU_RAW="25.3"
+CPU_INT="${CPU_RAW%.*}"     # 25 (소수점 이하 제거)
+
+# % 제거
+PCT="80%"
+NUM="${PCT%\%}"             # 80
+
+# 경로에서 파일명만
+FILE_PATH="/var/log/agent-app/monitor.log"
+NAME="${FILE_PATH##*/}"     # monitor.log (마지막 / 다음)
+DIR="${FILE_PATH%/*}"       # /var/log/agent-app (마지막 / 이전)
 ```
 
-### 부분 추출
+자주 쓰는 파라미터 확장:
+
+| 형식 | 의미 |
+|---|---|
+| `${var:-default}` | unset이면 default |
+| `${var:=default}` | unset이면 default + 할당 |
+| `${var:?msg}` | unset이면 에러 종료 |
+| `${var:+value}` | 있으면 value |
+| `${#var}` | 길이 |
+| `${var:offset:length}` | 부분 문자열 |
+| `${var#prefix}` | 짧은 prefix 제거 |
+| `${var##prefix}` | 긴 prefix 제거 (greedy) |
+| `${var%suffix}` | 짧은 suffix 제거 |
+| `${var%%suffix}` | 긴 suffix 제거 |
+| `${var/pat/repl}` | 첫 매칭 치환 |
+| `${var//pat/repl}` | 모든 매칭 치환 |
+| `${var^^}` | 모두 대문자 |
+| `${var,,}` | 모두 소문자 |
+
+### Step 3 — 산술 확장 `$((...))`
 
 ```bash
-${var:offset:length}    # 부분 문자열
-${#var}                 # 문자열 길이
-```
-
-```bash
-str="Hello, World"
-echo "${str:7:5}"       # World
-echo "${#str}"          # 12
-```
-
-### prefix/suffix 제거
-
-```bash
-${var#prefix}      # 짧은 prefix 제거 (greedy 아님)
-${var##prefix}     # 긴 prefix 제거 (greedy)
-${var%suffix}      # 짧은 suffix 제거
-${var%%suffix}     # 긴 suffix 제거
-```
-
-```bash
-file="/var/log/agent-app/monitor.log"
-echo "${file##*/}"      # monitor.log (마지막 / 다음)
-echo "${file%/*}"       # /var/log/agent-app (마지막 / 이전)
-echo "${file%.log}"     # /var/log/agent-app/monitor (.log 제거)
-```
-
-★ `${file##*/}`는 `basename`과 동등, `${file%/*}`는 `dirname`과 동등. 외부 명령 호출 없이 처리 가능 — 성능 이점.
-
-### 치환
-
-```bash
-${var/pattern/replacement}     # 첫 매칭만
-${var//pattern/replacement}    # 모든 매칭
-${var/#pattern/replacement}    # 시작 부분만
-${var/%pattern/replacement}    # 끝 부분만
-```
-
-```bash
-path="/usr/local/bin"
-echo "${path//\//:}"           # :usr:local:bin (모든 /를 :로)
-echo "${path/local/global}"    # /usr/global/bin (첫 매칭만)
-```
-
-### 대소문자 변환
-
-```bash
-${var^}     # 첫 글자 대문자
-${var^^}    # 모두 대문자
-${var,}     # 첫 글자 소문자
-${var,,}    # 모두 소문자
-```
-
-```bash
-name="alice"
-echo "${name^}"        # Alice
-echo "${name^^}"       # ALICE
-```
-
-## 산술 확장
-
-`$((...))`로 정수 산술. Bash는 floating point 안 됨 (bc·awk 사용).
-
-```bash
-echo $((2 + 3))            # 5
-echo $((10 / 3))           # 3 (정수 나누기)
-echo $((10 % 3))           # 1 (나머지)
-echo $((1 << 4))           # 16 (비트 시프트)
+echo $((2 + 3))         # 5
+echo $((10 / 3))        # 3 (정수)
+echo $((10 % 3))        # 1 (나머지)
 
 count=0
-((count++))                # count 증가 (값 사용 X)
+((count++))             # count 증가
 ((count > 5)) && echo "큼"
 ```
 
-floating point가 필요하면:
-
+★ Bash는 **정수만** — 소수점은 `bc`나 `awk` 필요:
 ```bash
-echo "scale=2; 10/3" | bc          # 3.33
-echo "scale=2; 10/3" | awk '{print}'    # awk도 가능
-printf "%.2f\n" $(echo "10/3" | bc -l)   # 3.33
+echo "scale=2; 10/3" | bc      # 3.33
+printf "%.2f\n" $(echo "10/3" | bc -l)
 ```
 
-## 리다이렉션
+### Step 4 — 리다이렉션
 
-stdin·stdout·stderr를 파일이나 다른 명령으로 보내기.
+```bash
+# stdout을 파일로
+echo "log line" > /tmp/log.txt        # 덮어쓰기
+echo "log line" >> /tmp/log.txt       # 추가 (append)
+
+# stderr만
+cmd 2> /tmp/err.txt
+
+# stdout + stderr 모두 한 파일로
+cmd >> /tmp/log.txt 2>&1              # ★ 순서 중요
+# 또는 (Bash 확장)
+cmd &>> /tmp/log.txt
+
+# stdout 버리기
+cmd > /dev/null
+
+# 모든 출력 버리기
+cmd > /dev/null 2>&1
+```
+
+`2>&1`의 순서 — 항상 redirect 뒤에:
+```bash
+cmd > file 2>&1     # ✅ 둘 다 file로
+cmd 2>&1 > file     # ❌ stderr는 터미널, stdout만 file
+```
+
+### Step 5 — 종합 — monitor.sh의 자원 추출
+
+```bash
+LOG_FILE="${AGENT_LOG_DIR:-/var/log/agent-app}/monitor.log"
+
+# CPU (top + awk)
+CPU_USED=$(top -b -n 2 -d 0.5 | grep "Cpu(s)" | tail -1 \
+    | awk -F'id,' '{print 100 - $1}' | awk '{print $NF}')
+
+# 메모리 (free + awk)
+MEM_USED=$(free | awk '/^Mem:/ {printf "%.1f", $3/$2 * 100}')
+
+# 디스크 (df + 파라미터 확장)
+DISK_LINE=$(df / | tail -1)
+read -r _ _ _ _ DISK_PCT _ <<< "$DISK_LINE"
+DISK_USED="${DISK_PCT%\%}"   # % 제거
+
+# 로그 추가
+{
+    echo "[$(date '+%Y-%m-%dT%H:%M:%S')] [RESOURCE MONITORING]"
+    printf "CPU Usage : %s%%\n" "$CPU_USED"
+    printf "MEM Usage : %s%%\n" "$MEM_USED"
+    printf "DISK Used : %s%%\n" "$DISK_USED"
+} >> "$LOG_FILE" 2>&1
+```
+
+`{ ... } >> file` 그룹은 여러 명령의 출력을 한 번에 redirect.
+
+전체 구현: [bin/monitor.sh](https://github.com/codewhite7777/codyssey_b1_1/blob/main/bin/monitor.sh)
+
+---
+
+## 개념
+
+### `$()` vs 백틱
+
+```bash
+# ❌ 백틱 (옛 표기)
+result=`echo \`date\``       # 중첩 시 escape 지옥
+
+# ✅ $() 권장
+result=$(echo $(date))       # 중첩 자연스러움
+```
+
+`$()`가 표준. 백틱은 절대 쓰지 마세요.
+
+### 파라미터 확장 vs 외부 명령
+
+```bash
+file="/var/log/monitor.log"
+
+# basename·dirname 호출
+NAME=$(basename "$file")     # 외부 명령
+DIR=$(dirname "$file")
+
+# 파라미터 확장 (★ 더 빠름)
+NAME="${file##*/}"           # 외부 명령 호출 없음
+DIR="${file%/*}"
+```
+
+스크립트가 매분 실행되면 외부 명령 호출 절약이 의미 있음.
+
+### 명령 치환의 서브셸 함정
+
+```bash
+result=$(cd /tmp && pwd)     # /tmp (정상)
+echo "$PWD"                  # 원래 위치 — cd는 서브셸 안에서만
+
+# ★ 변수 변경도 서브셸 안에서만
+$(MY_VAR="hello")            # 의미 없음 — 부모는 못 봄
+```
+
+### 리다이렉션 흐름
 
 ```mermaid
 flowchart LR
-    A[프로세스] --> B[stdin 0]
-    A --> C[stdout 1]
-    A --> D[stderr 2]
+    A["프로세스"] --> B["stdin (0)"]
+    A --> C["stdout (1)"]
+    A --> D["stderr (2)"]
     C --> E["> file<br/>덮어쓰기"]
     C --> F[">> file<br/>추가"]
     D --> G["2> file<br/>stderr만"]
-    C --> H["2>&1<br/>stderr → stdout"]
-    H --> I["&> file<br/>둘 다 한 파일로"]
+    C -->|"2>&1"| H["둘 다 같은 곳"]
 
     style C fill:#cce5ff
     style D fill:#ffe6cc
 ```
 
-주요 패턴:
+### Heredoc — 여러 줄 입력
 
 ```bash
-cmd > file              # stdout을 file로 (덮어쓰기)
-cmd >> file             # stdout을 file에 추가
-cmd 2> file             # stderr만 file로
-cmd > file 2>&1         # stdout + stderr 모두 file로 (★ 순서 중요)
-cmd &> file             # 위와 동등 (Bash 확장)
-cmd > /dev/null         # stdout 버리기
-cmd > /dev/null 2>&1    # 모든 출력 버리기
-cmd < input             # stdin을 file에서
-```
-
-`2>&1`의 순서가 중요:
-
-```bash
-cmd > file 2>&1         # ✓ 둘 다 file로
-cmd 2>&1 > file         # ✗ stderr는 terminal, stdout만 file
-```
-
-이유: 왼쪽부터 처리. `2>&1`은 "stderr를 stdout과 같은 곳으로" — 그 시점 stdout이 terminal이면 stderr도 terminal로.
-
-Heredoc과 herestring:
-
-```bash
-# Heredoc — 여러 줄 입력
+# 변수 expand 됨
 cat <<EOF
-Hello
-$USER
+Hello, $USER
+Today is $(date +%Y-%m-%d)
 EOF
 
-# Heredoc 변수 expansion 안 함 (작은따옴표)
+# 변수 expand 안 됨 (★ 그대로 출력)
 cat <<'EOF'
-$USER will be literal
+$USER 그대로
+$(date) 그대로
 EOF
 
-# Herestring — 한 줄 입력
-grep "alice" <<< "alice bob carol"
+# 파일 작성
+sudo tee /etc/foo.conf <<'EOF' >/dev/null
+KEY=value
+EOF
 ```
 
-## 한 번 보자
+`<<'EOF'`(작은따옴표)는 expansion 없이 그대로. setup 스크립트에서 설정 파일 작성할 때 매우 유용.
 
-monitor.sh의 자주 쓰는 패턴들:
+### `tee` — stdout과 파일 동시에
 
 ```bash
-#!/usr/bin/env bash
-set -euo pipefail
+# 화면에도 보이고 파일에도 저장
+echo "log" | tee /tmp/log.txt
 
-# 환경 변수 default (파라미터 확장)
-LOG_DIR="${AGENT_LOG_DIR:-/var/log/agent-app}"
-LOG_FILE="$LOG_DIR/monitor.log"
+# 추가 모드
+echo "log" | tee -a /tmp/log.txt
 
-# 명령 치환
-TIMESTAMP=$(date '+%Y-%m-%d %H:%M:%S')
-PID=$(pgrep -f 'agent_app\.py' | head -1 || true)
-
-# 산술 확장 — PID 카운트
-if [[ -n "$PID" ]]; then
-    PID_COUNT=$(echo "$PID" | wc -l)
-    echo "$PID_COUNT 프로세스 실행 중"
-fi
-
-# 파라미터 확장 — 파일명 추출
-SCRIPT_NAME="${0##*/}"             # monitor.sh
-SCRIPT_DIR="${0%/*}"               # /path/to/dir
-
-# 리다이렉션 — 로그 추가
-echo "[$TIMESTAMP] PID:$PID" >> "$LOG_FILE"
-
-# stderr 분리 — 에러는 별도 로그
-cmd_that_might_fail >> "$LOG_FILE" 2>> "$LOG_DIR/monitor.err"
-
-# 둘 다 한 파일로 (단순)
-cmd_that_might_fail >> "$LOG_FILE" 2>&1
+# sudo 권한으로 파일 쓰기 (★ 흔한 패턴)
+echo "PORT 20022" | sudo tee -a /etc/ssh/sshd_config >/dev/null
 ```
 
-awk·sed 대신 파라미터 확장으로 처리하는 예:
+`sudo command > file`은 sudo가 command만 root로 실행, redirect는 본인 권한 → 실패. `tee` 사용이 정답.
+
+### `read`로 라인 파싱
 
 ```bash
-# awk 사용
-file=$(df / | awk 'NR==2 {gsub("%", ""); print $5}')
-
-# 순수 Bash로
-df_line=$(df / | tail -1)
-read -r filesystem size used avail percent mounted <<< "$df_line"
-percent="${percent%\%}"           # % 제거
-echo "사용률: $percent%"
-```
-
-## 흔한 함정
-
-> [!WARNING]
-> **명령 치환의 trailing newline 손실**: `$()` 사용 시 trailing newline이 자동 제거됨. 정상이지만 의도된 newline이 필요할 때 문제. `value=$(cmd; printf x); value="${value%x}"` 같은 트릭으로 보존 가능.
-
-명령 치환의 trailing newline 제거는 거의 항상 도움되지만 가끔 함정이다. 파일 내용을 그대로 변수에 받아야 할 때 newline 누락이 영향. 일반적으로는 신경 안 써도 됨.
-
-`$()`는 서브셸이므로 변수 변경이 부모로 안 간다.
-
-```bash
-result=""
-result=$(echo "foo")           # 정상 — stdout을 받음
-$(result="foo")                # ★ 의미 없음 — result는 서브셸 안에서만
-```
-
-`*`·`?` glob 함정도 자주 만난다.
-
-```bash
-files=$(ls *.txt)              # 매칭 안 되면 "*.txt" 그대로
-```
-
-`shopt -s nullglob`로 매칭 없으면 빈 문자열로 처리, `shopt -s failglob`로 에러로 처리. monitor.sh에서는 보통 nullglob.
-
-`<<<`(herestring)에 trailing newline이 자동 추가된다. `read -r line <<< "$value"`에서 line은 value + newline... 보통 문제 없지만 미묘한 케이스 있음.
-
-`2>&1`의 위치를 놓치면 stderr가 redirect 안 된다. 매번 헷갈리므로 가능하면 `&>`(Bash 확장) 쓰기.
-
-## B1-1 매핑
-
-monitor.sh의 핵심 데이터 추출 패턴:
-
-```bash
-# CPU 사용률 (top + awk + 파라미터 확장)
-CPU_RAW=$(top -b -n 2 -d 0.5 | grep "Cpu(s)" | tail -1 | awk -F'id,' '{print 100 - $1}' | awk '{print $NF}')
-CPU_USED="${CPU_RAW%.*}"           # 정수부만 (소수점 제거)
-
-# 메모리 사용률 (free + awk)
-MEM_USED=$(free | awk '/^Mem:/ {printf "%.1f", $3/$2 * 100}')
-
-# 디스크 사용률 (df + 파라미터 확장)
+# df 출력의 5번째 컬럼 추출 (★ awk 없이)
 DISK_LINE=$(df / | tail -1)
-read -r _ _ _ _ DISK_PCT _ <<< "$DISK_LINE"
-DISK_USED="${DISK_PCT%\%}"         # % 제거
-
-# 로그 포맷 출력
-echo "[$(date '+%Y-%m-%d %H:%M:%S')] PID:$PID CPU:${CPU_USED}% MEM:${MEM_USED}% DISK_USED:${DISK_USED}%" >> "$LOG_FILE"
+read -r FS SIZE USED AVAIL PCT MOUNT <<< "$DISK_LINE"
+echo "사용률: ${PCT%\%}%"
 ```
 
-`read -r _ _ _ _ DISK_PCT _ <<< "$line"`는 5번째 컬럼만 추출하는 Bash 네이티브 패턴. awk 호출 없이 처리.
+`<<<`(herestring)은 문자열을 stdin으로 전달. `read`가 공백으로 분리해서 각 변수에 할당.
 
-## 인접 토픽
-
-<details>
-<summary><b>응용 토픽 — printf·process substitution·xargs·tee (펼치기)</b></summary>
-
-`printf`는 `echo`보다 강력하고 portable한 출력 도구. 형식 지정자(`%s`, `%d`, `%f`)와 escape 처리가 일관된다.
+### B1-1 patterns 한 줄 정리
 
 ```bash
-printf "%-10s %5d %8.2f\n" "alice" 100 3.14
-# alice         100     3.14
+# 환경 변수 default
+LOG="${AGENT_LOG_DIR:-/var/log/agent-app}/monitor.log"
+
+# 소수점 → 정수
+INT="${VAL%.*}"
+
+# % 제거
+NUM="${PCT%\%}"
+
+# 파일 추가
+echo "line" >> "$LOG"
+
+# 둘 다 추가
+cmd >> "$LOG" 2>&1
 ```
 
-Process substitution `<(...)` `>(...)`는 명령을 파일처럼 사용:
-
-```bash
-# 두 정렬 결과 diff
-diff <(sort file1) <(sort file2)
-
-# 명령 출력을 여러 곳에 전달
-ls | tee >(grep .txt > txt_files) >(grep .log > log_files) > /dev/null
-```
-
-`xargs`는 stdin을 명령 인자로 변환:
-
-```bash
-echo "file1 file2 file3" | xargs ls -l        # ls -l file1 file2 file3
-find . -name "*.tmp" | xargs rm               # 모든 tmp 삭제
-find . -name "*.tmp" -print0 | xargs -0 rm    # null-separated (안전)
-```
-
-`tee`는 stdin을 파일과 stdout에 동시에:
-
-```bash
-echo "message" | tee file.log                 # stdout + file
-echo "message" | tee -a file.log              # 추가 모드
-sudo cmd | tee /etc/important.conf            # sudo 권한으로 파일 쓰기
-```
-
-monitor.sh의 `tee -a "$LOG_FILE"`는 stdout과 파일 동시 출력에 자주 쓴다.
-
-</details>
+---
 
 ## 참고
 
-- `man bash` — EXPANSION 섹션 (매우 자세)
-- [BashFAQ/073: parameter expansion](https://mywiki.wooledge.org/BashFAQ/073)
-- [Bash Hackers — Parameter expansion](https://wiki.bash-hackers.org/syntax/pe)
+- `man bash` — EXPANSION 섹션
+- 관련 노트: [bash-fundamentals.md](./bash-fundamentals.md) — 기본
+- 관련 노트: [bash-control-flow.md](./bash-control-flow.md) — if/for/case
 
 ---
-출처: B1-1 (Layer 4.4) · 학습일: 2026-05-11
+출처: B1-1 (Layer 4.4) · 학습일: 2026-05-12

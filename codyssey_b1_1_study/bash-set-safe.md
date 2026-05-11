@@ -1,269 +1,290 @@
-# 안전한 Bash 스크립트: set -euo pipefail
+# 안전한 Bash — set -euo pipefail
 
-> **TLDR** · `set -e`(에러 시 즉시 종료), `set -u`(unset 변수 사용 시 에러), `set -o pipefail`(파이프 중간 실패 감지)의 3종 세트가 운영 스크립트의 안전 표준. `IFS=$'\n\t'`도 함께 두면 공백·glob 함정 추가 방어. 미세한 함정도 있지만 대부분 스크립트가 이 패턴으로 시작.
+> **한 줄로** · 기본 Bash는 명령이 실패해도 다음 줄로 그냥 넘어가요. `set -euo pipefail` 한 줄로 **"에러 나면 즉시 멈춤"**, **"빈 변수 쓰면 에러"**, **"파이프 중간 실패도 감지"** 3가지를 모두 켤 수 있어요. B1-1 monitor.sh·setup 스크립트의 표준 헤더.
 
-## 개요
+---
 
-기본 Bash는 매우 관대해서 에러가 발생해도 다음 줄로 그냥 넘어간다. 한 줄이 실패해도 전체 스크립트는 success(0)으로 끝날 수 있다. 운영 자동화에서는 치명적인 행동이다 — setup 스크립트가 중간에 실패했는데 "성공"으로 끝나면 production이 깨진 상태로 남는다.
+## 과제 요구사항
 
-`set -euo pipefail`은 이 관대함을 엄격하게 만드는 한 줄이다. 1990년대부터 운영 자동화 커뮤니티가 표준으로 정착시킨 패턴이며, 현대 CI/CD·설치 스크립트의 거의 모든 첫머리에 있다.
+### 이게 무슨 작업?
 
-## 왜 알아야 하나
+회사 비유:
+- 일반 Bash = **"문제 생겨도 계속 진행하는 직원"** → 사일런트 실패
+- `set -euo pipefail` = **"문제 생기면 즉시 보고하고 중단하는 직원"** → 안전
 
-운영 스크립트가 silent failure로 production을 망가뜨리는 사고가 흔하다. 디스크 백업 스크립트가 중간 명령 실패를 무시하고 "백업 완료"를 보고하거나, 배포 스크립트가 build 실패해도 deploy를 진행하거나, setup 스크립트가 일부만 적용된 채로 끝나는 경우 등이다.
+setup 스크립트가 중간에 실패했는데 그대로 진행하면 **production이 깨진 상태로 남음**. 안전 모드는 이를 막아요.
 
-`set -euo pipefail`은 이런 사고를 방지하는 가장 단순하고 효과적인 도구다. 단 미세한 함정이 있어 모든 케이스에 만능은 아니다 — 의도된 실패(예: `grep -q`가 못 찾았을 때)를 처리하는 패턴도 함께 알아야 한다.
+### 명세 원문 (원본 그대로)
 
-## set -e (errexit)
+> **권장 헤더**
+> ```bash
+> #!/usr/bin/env bash
+> set -euo pipefail
+> ```
+>
+> **자기평가**
+> - `set -euo pipefail`을 사용한 이유를 설명할 수 있다
 
-명령이 non-zero exit code를 반환하면 즉시 스크립트 종료.
+### 무엇을 켜나
+
+| 옵션 | 의미 |
+|---|---|
+| `set -e` | **에러 발생 시 즉시 종료** (silent failure 방지) |
+| `set -u` | **unset 변수 사용 시 에러** (타이포 방지) |
+| `set -o pipefail` | **파이프 중간 명령 실패 감지** |
+
+### 잘 됐는지 확인하기
 
 ```bash
-#!/bin/bash
-set -e
+# 안전 모드 검증
+cat <<'EOF' > /tmp/test.sh
+#!/usr/bin/env bash
+set -euo pipefail
 echo "step 1"
-false             # exit code 1 → 여기서 스크립트 종료
-echo "step 2"     # 실행 안 됨
+false           # 실패 → 종료
+echo "step 2"   # 도달 안 함
+EOF
+chmod +x /tmp/test.sh
+/tmp/test.sh
+echo $?         # 1 (안전 모드 동작)
 ```
 
-이 한 줄이 silent failure를 거의 막는다. 하지만 의도된 실패(grep, 조건 검사 등)도 종료시키므로 우회 패턴이 필요하다.
+`step 2`가 출력 안 되면 정상.
+
+---
+
+## 구현 방법
+
+### Step 1 — 모든 스크립트의 첫 줄
 
 ```bash
-# 의도된 실패 우회 패턴
-grep "pattern" file || true       # || true로 항상 success로
-result=$(grep "pattern" file) || result=""   # 또는 default 값
-if grep -q "pattern" file; then   # if 안에서는 set -e 비활성
-    ...
+#!/usr/bin/env bash
+set -euo pipefail
+```
+
+`set -e -u -o pipefail`로 풀어 써도 동일.
+
+### Step 2 — 의도된 실패 처리 (★ 필수)
+
+`set -e`는 모든 실패에 반응. 의도적으로 실패할 수 있는 명령은 우회 패턴 필요.
+
+```bash
+# 1. || true로 실패 허용
+grep "pattern" file || true
+
+# 2. 결과를 변수에 + default
+result=$(grep "pattern" file || echo "")
+
+# 3. if 안에서는 set -e 자동 비활성
+if grep -q "pattern" file; then
+    echo "found"
 fi
 ```
 
-`set -e`의 미세한 함정: 명령이 `if`·`while`·`&&`·`||`의 일부로 실행될 때는 비활성화된다. 함수 안에서도 일부 케이스 (legacy bash 동작).
+### Step 3 — unset 변수에 default 값
 
-## set -u (nounset)
-
-unset 변수를 사용하면 즉시 에러.
+`set -u`는 빈 변수도 잡음. 의도적으로 비어있을 수 있는 변수는 default 처리.
 
 ```bash
-#!/bin/bash
-set -u
-echo "$UNDEFINED_VAR"     # bash: UNDEFINED_VAR: unbound variable → 종료
+# unset이면 default 사용
+echo "${OPTIONAL_VAR:-default}"
+
+# unset이면 빈 문자열
+echo "${OPTIONAL_VAR:-}"
+
+# 환경 변수 default
+AGENT_HOME="${AGENT_HOME:-/home/agent-admin/agent-app}"
 ```
 
-타이포나 변수명 오류를 잡는 데 매우 유용하다. 단 의도적으로 unset일 수 있는 변수는 default 값 처리.
-
-```bash
-echo "${OPTIONAL_VAR:-default}"   # unset이면 default
-echo "${OPTIONAL_VAR:-}"          # unset이면 빈 문자열
-```
-
-`$@`·`$*`는 인자가 없으면 unset이라 `set -u`에 걸린다. `"${@:-}"` 패턴으로 우회.
-
-## set -o pipefail
-
-파이프라인에서 중간 명령의 실패를 감지.
-
-```bash
-#!/bin/bash
-set -e
-false | true              # 파이프 전체 exit code는 마지막 명령(true)의 0
-echo "여기 도달함"        # set -e가 못 잡음!
-
-set -o pipefail
-false | true              # 이제 pipefail이 1 반환 → set -e 발동
-echo "여기 도달 안 함"
-```
-
-운영에서 매우 중요한 옵션이다. `cmd | grep | sort` 같은 파이프에서 첫 명령이 실패해도 grep이 빈 입력으로 0 반환, sort도 0 반환 → 전체 success로 판단되어 silent failure 발생.
-
-## 통합 패턴: set -euo pipefail
-
-세 옵션을 한 줄로:
+### Step 4 — IFS도 안전하게 (보너스)
 
 ```bash
 #!/usr/bin/env bash
 set -euo pipefail
+IFS=$'\n\t'
 ```
 
-순서·표기는 자유 — `set -e -u -o pipefail`도 동일.
+`IFS`(Internal Field Separator)는 word-split할 때 구분자. 기본은 공백·탭·개행. `\n\t`만 두면 공백 함정이 더 줄어들어요.
 
-추가로 IFS를 안전한 값으로 설정하는 패턴도 흔히 쓴다.
+### Step 5 — verify.sh의 예외 — `-e` 빼기
+
+검증 스크립트는 **하나가 실패해도 계속 진행**해야 종합 결과를 볼 수 있어요. 그래서 `-e`만 빼는 게 정석:
 
 ```bash
 #!/usr/bin/env bash
-set -euo pipefail
-IFS=$'\n\t'                # 공백을 separator에서 제외 → glob 함정 ↓
+set -uo pipefail          # -e 없음 (의도)
+
+failures=0
+
+check() {
+    if eval "$1"; then
+        echo "[OK] $2"
+    else
+        echo "[FAIL] $2"
+        failures=$((failures + 1))
+    fi
+}
+
+check 'systemctl is-active ssh' 'sshd 동작'
+check 'ss -ltn | grep -q :20022' 'SSH 포트 20022'
+check 'ss -ltn | grep -q :15034' 'agent 포트 15034'
+
+# 마지막에 종합 결과로 종료
+[ $failures -eq 0 ]
 ```
 
-이 4줄이 운영 스크립트의 표준 헤더다.
+전체 구현: [setup/verify.sh](https://github.com/codewhite7777/codyssey_b1_1/blob/main/setup/verify.sh)
 
-## 동작 흐름
+---
+
+## 개념
+
+### `set -e` 흐름
 
 ```mermaid
-flowchart TD
-    A[명령 실행] --> B{exit code == 0?}
-    B -->|Yes| C[다음 명령 진행]
-    B -->|No| D{if/while/&&/||의<br/>일부인가?}
-    D -->|Yes| C
-    D -->|No| E{set -e 활성?}
-    E -->|Yes| F["★ 스크립트 즉시 종료<br/>(non-zero exit)"]
-    E -->|No| C
+flowchart LR
+    A[명령 실행] --> B{exit code 0?}
+    B -->|예| C[다음 명령]
+    B -->|아니오| D{if/while/&&/||?}
+    D -->|예| C
+    D -->|아니오| E["★ 즉시 스크립트 종료"]
 
-    G[변수 사용] --> H{변수 unset?}
-    H -->|No| C
-    H -->|Yes| I{set -u 활성?}
-    I -->|Yes| F
-    I -->|No| J["빈 문자열로 평가<br/>(silent)"]
-
-    K[파이프 실행] --> L{중간 명령 실패?}
-    L -->|No| C
-    L -->|Yes| M{pipefail 활성?}
-    M -->|Yes| F
-    M -->|No| C
-
-    style F fill:#ffcccc
+    style E fill:#ffcccc
     style C fill:#ccffcc
 ```
 
-## 한 번 보자
+`if`·`while`·`&&`·`||`의 일부로 실행되는 명령은 실패해도 `set -e`가 무시. 의도된 실패 처리 패턴.
+
+### `set -u` — unset 변수 잡기
+
+```bash
+set -u
+
+# ❌ 타이포 - 잡힘
+echo "$AGNET_HOME"      # bash: AGNET_HOME: unbound variable → 종료
+
+# ✅ default
+echo "${AGNET_HOME:-/default}"
+```
+
+타이포·미정의 변수를 즉시 탐지. 운영에서 매우 유용.
+
+### `set -o pipefail` — 파이프 중간 실패 잡기
+
+```bash
+# pipefail 없이
+false | true
+echo $?         # 0 (마지막 명령 true의 exit code)
+
+# pipefail 있으면
+set -o pipefail
+false | true
+echo $?         # 1 (★ 중간 실패 잡힘)
+```
+
+`cmd | grep | sort` 같은 파이프에서 첫 명령이 실패해도 grep·sort가 0 반환하면 전체 success로 판단 → 사일런트 실패. pipefail이 이를 막아요.
+
+### 안전 모드의 효과 (정리)
+
+| 옵션 | 잡는 함정 |
+|---|---|
+| `set -e` | 중간 명령 실패 무시 |
+| `set -u` | 타이포·미정의 변수 |
+| `set -o pipefail` | 파이프 중간 실패 |
+| `IFS=$'\n\t'` | 공백·glob 함정 |
+
+### 의도된 실패 패턴 (★ 가장 중요)
+
+```bash
+set -e
+
+# ❌ set -e가 잡음
+pgrep agent-app                    # 없으면 exit 1 → 스크립트 종료
+
+# ✅ || true로 의도된 실패 허용
+PID=$(pgrep agent-app || true)
+if [ -z "$PID" ]; then
+    echo "[ERROR] agent-app 없음"
+    exit 1
+fi
+
+# ✅ if 안에서는 자동 비활성
+if pgrep -q agent-app; then
+    echo "[OK] agent-app 동작"
+fi
+```
+
+### `set -x` — 트레이스 모드 (디버깅)
+
+```bash
+set -x          # 실행되는 모든 명령을 stderr에 출력
+risky_command
+set +x          # trace 끔
+```
+
+또는 처음부터:
+```bash
+set -euxo pipefail        # x 추가 → trace 모드
+```
+
+디버깅에 매우 유용. production에서는 끔.
+
+### `set -e`의 함정들
+
+```mermaid
+flowchart LR
+    A[명령 실패] --> B{어느 컨텍스트?}
+    B -->|단독 실행| C["✅ set -e 잡음"]
+    B -->|if/while 안| D["★ 비활성 (의도)"]
+    B -->|&&/||의 일부| D
+    B -->|함수 안| E["⚠ 미묘 (Bash 4.4+ 일부 개선)"]
+    B -->|서브셸 안| F["⚠ inherit_errexit 옵션 필요"]
+
+    style C fill:#ccffcc
+    style D fill:#cce5ff
+    style E fill:#ffe6cc
+    style F fill:#ffe6cc
+```
+
+대부분의 경우 잘 동작하지만, **함수**·**서브셸**에서는 미묘한 함정 있음. 안전을 위해:
+
+```bash
+shopt -s inherit_errexit    # Bash 4.4+ — 서브셸에도 set -e 상속
+```
+
+### 대화형 셸에서는 절대 set -e 금지
+
+`.bashrc`에 `set -e` 두면 명령 하나 실패해도 셸이 종료됨 (세션 끊김). 스크립트 안에서만 사용.
+
+### B1-1 표준 헤더 정리
+
+monitor.sh와 모든 setup 스크립트는 이 헤더로 시작:
 
 ```bash
 #!/usr/bin/env bash
 set -euo pipefail
 
 # 의도된 실패 처리
-if grep -q "pattern" /etc/hosts; then
-    echo "found"
-fi
-
-# || true로 의도된 실패 허용
-result=$(grep "maybe_missing" file || true)
-
-# default 값으로 unset 우회
-NAME="${USER_NAME:-anonymous}"
-echo "Hello, $NAME"
-
-# 파이프 안전성 검증
-if false | grep "foo" || true; then
-    echo "이건 도달"
-fi
-```
-
-`set -x`로 trace 모드를 추가하면 각 명령 실행을 stderr에 출력하므로 디버깅에 유용:
-
-```bash
-set -euxo pipefail        # x 추가 → trace
-```
-
-또는 일부 구간만:
-
-```bash
-set -x
-risky_command
-set +x                    # trace 비활성
-```
-
-## 흔한 함정
-
-> [!WARNING]
-> **`set -e`의 미세한 함정**: `if`·`&&`·`||`·`while`·함수의 일부로 실행되는 명령에는 적용 안 됨. 함수 안에서 `set -e`가 항상 작동한다고 가정하면 함정. 명시적으로 exit code 체크하는 게 안전.
-
-`set -e`의 가장 미묘한 함정은 컨텍스트별 동작 차이다. 함수 안에서 명령이 실패해도 함수 자체는 마지막 명령의 exit code를 반환하므로, 호출자가 그 exit code를 체크하지 않으면 사일런트 실패가 가능하다. Bash 4.4+에서 `shopt -s inherit_errexit`로 일부 개선되었지만 완벽하지 않다.
-
-`pipefail`도 모든 케이스에 만능은 아니다. 예를 들어 `head -1`이 입력을 1줄만 읽고 종료하면, 그 앞의 generator가 SIGPIPE로 종료되며 pipefail이 잘못 트리거된다. `set +o pipefail`로 일시적으로 끄거나 `(cmd | head -1) || true` 패턴을 사용.
-
-`set -u`는 array 동작에서 함정이 있다. `${array[@]}`가 빈 array일 때 unbound로 잡히는 경우가 있어 `"${array[@]+"${array[@]}"}"` 같은 복잡한 패턴이 필요할 수 있다. 대부분의 경우 default 값 처리(`${var:-}`)로 우회.
-
-대화형 셸에서는 절대 `set -e`를 켜지 말 것. 명령 실패 시 셸이 종료되어 세션이 끊긴다 (`.bashrc`에 `set -e` 절대 금지).
-
-## B1-1 매핑
-
-monitor.sh의 안전 헤더:
-
-```bash
-#!/usr/bin/env bash
-# monitor.sh — 시스템 관제 자동화
-
-set -euo pipefail
-IFS=$'\n\t'
-
-# 의도된 실패 처리 (pgrep이 못 찾을 수 있음)
-PID=$(pgrep -f 'agent_app\.py' | head -1 || true)
+PID=$(pgrep -f "agent-app" 2>/dev/null || true)
 if [ -z "$PID" ]; then
-    echo "[ERROR] agent_app.py not running"
+    echo "[ALERT] agent-app 미실행"
     exit 1
 fi
 
-# 정상 흐름
-echo "[OK] PID=$PID"
+# 환경 변수 default
+LOG_FILE="${AGENT_LOG_DIR:-/var/log/agent-app}/monitor.log"
 ```
 
-setup 스크립트의 안전 헤더:
+verify.sh만 예외 — `-e`만 빼서 모든 검증을 끝까지 진행.
 
-```bash
-#!/usr/bin/env bash
-# setup/02-firewall.sh
-
-set -euo pipefail
-
-# 멱등성 — 이미 활성화되어 있어도 안전
-sudo ufw --force reset           # --force로 confirm 우회
-sudo ufw default deny incoming
-sudo ufw default allow outgoing
-sudo ufw allow 20022/tcp
-sudo ufw allow 15034/tcp
-sudo ufw --force enable
-
-echo "[OK] firewall configured"
-```
-
-`set -e`가 활성화되어 있으므로 어느 명령이 실패해도 즉시 종료된다. 부분적으로 설정되는 상태를 방지.
-
-verify.sh에서는 의도적으로 일부 실패를 허용:
-
-```bash
-#!/usr/bin/env bash
-set -uo pipefail              # ★ -e는 빼기 (실패한 검증도 끝까지 진행)
-
-failures=0
-
-check() {
-    if ! eval "$1"; then
-        echo "[FAIL] $2"
-        ((failures++)) || true
-    else
-        echo "[OK] $2"
-    fi
-}
-
-check 'systemctl is-active sshd' 'SSH 데몬 실행'
-check 'ss -tulnp | grep -q :20022' 'SSH 포트 20022 LISTEN'
-check 'ss -tulnp | grep -q :15034' '앱 포트 15034 LISTEN'
-
-[ $failures -eq 0 ]            # 마지막에 전체 결과로 종료
-```
-
-## 인접 토픽
-
-<details>
-<summary><b>응용 토픽 — ERR trap·shopt·inherit_errexit·strict mode (펼치기)</b></summary>
-
-`trap 'echo "error at line $LINENO"' ERR`로 에러 발생 시 핸들러를 실행할 수 있다. `set -e`와 결합해 어느 줄에서 실패했는지 로깅. 디버깅·alerting에 유용.
-
-`shopt -s inherit_errexit`는 Bash 4.4+ 옵션으로, 서브셸에서도 `set -e`가 상속되도록 한다. 기본은 inherit 안 되어 `result=$(failing_cmd)`가 set -e에 안 걸리는 함정 해결.
-
-unofficial "Unofficial Bash Strict Mode"는 Aaron Maxwell이 제안한 4줄 헤더 — `set -euo pipefail`, `IFS=$'\n\t'`, `shopt -s inherit_errexit`. 운영 표준으로 자리잡았다.
-
-`set -E`(errtrace)는 `ERR` trap이 함수·서브셸·command substitution까지 상속되게 한다. trap 활용을 깊이 할 때 필요.
-
-bash 외 셸에서의 차이도 알아둘 가치가 있다. zsh의 `EMULATE_BASH` 모드는 거의 호환이지만 set -e 동작이 약간 다르다. fish는 set -e 대신 다른 모델 (status 명시 체크).
-
-</details>
+---
 
 ## 참고
 
-- `man bash` — SHELL BUILTIN COMMANDS의 `set`, `shopt`
-- [BashFAQ/105: set -e](https://mywiki.wooledge.org/BashFAQ/105) — set -e의 모든 함정
-- [Aaron Maxwell — Bash Strict Mode](http://redsymbol.net/articles/unofficial-bash-strict-mode/)
+- `man bash` — SHELL BUILTIN COMMANDS의 `set`
+- [Bash Strict Mode](http://redsymbol.net/articles/unofficial-bash-strict-mode/) — Aaron Maxwell의 표준
+- 관련 노트: [bash-fundamentals.md](./bash-fundamentals.md) — Bash 기본
+- 관련 노트: [bash-trap.md](./bash-trap.md) — 에러 처리 핸들러
 
 ---
-출처: B1-1 (Layer 4.2) · 학습일: 2026-05-11
+출처: B1-1 (Layer 4.2) · 학습일: 2026-05-12

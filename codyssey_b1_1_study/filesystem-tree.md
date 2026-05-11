@@ -1,162 +1,215 @@
-# Linux 파일시스템 계층 (FHS)
+# Linux 파일시스템 구조
 
-> **TLDR** · Linux는 단일 루트(`/`) 트리 + FHS 표준으로 모든 머신에서 같은 종류 파일이 같은 위치에 존재한다. `/etc`(설정)·`/var/log`(로그)·`/proc`(가상 FS)·`/usr/bin`(명령)이 운영의 4대 거점이며, `/proc`·`/sys`·`/dev`는 디스크 없이 커널이 즉석 생성하는 pseudo-filesystem.
+> **한 줄로** · Linux는 모든 파일을 **단일 루트(`/`) 아래의 큰 나무 구조**로 관리. 어떤 종류 파일이 어디에 있어야 하는지에 대한 약속이 **FHS**. B1-1은 설정은 `/etc`, 로그는 `/var/log`, 사용자 파일은 `/home`이라는 표준 위치에 맞추라고 요구.
 
-## 개요
+---
 
-Linux 파일시스템은 Windows와 근본적으로 다른 모델을 채택한다. Windows가 `C:`, `D:` 같은 드라이브 단위로 네임스페이스를 분할하는 반면, Linux는 모든 파일과 디렉토리가 단일 루트(`/`) 아래의 거대한 트리로 통합된다. USB 메모리를 꽂으면 그것은 새로운 드라이브로 나타나는 게 아니라, 기존 트리의 어떤 노드(예: `/mnt/usb` 또는 `/media/user/STICK`)에 mount되어 트리에 흡수된다. 이 단일 네임스페이스는 컨테이너 격리, 네트워크 파일시스템, 가상 파일시스템 등 후대의 모든 추상화가 가능했던 토대다.
+## 과제 요구사항
 
-이 트리의 어디에 무엇을 두는지에 대한 약속이 **Filesystem Hierarchy Standard (FHS)**다. 1994년 첫 표준화 이후 거의 모든 Linux 배포판이 따르는 합의로, 같은 종류의 파일은 어떤 시스템에서도 같은 위치에서 발견된다는 보장을 만든다. 이 보장이 깨지면 패키지 매니저, 컨테이너 이미지, 운영 자동화 스크립트, 모니터링 도구가 모두 작동하지 않는다.
+### 이게 무슨 작업?
 
-## 왜 알아야 하나
+Linux는 Windows의 `C:\`, `D:\` 같은 드라이브 구분이 없어요. 모든 파일이 **하나의 큰 나무 구조** 안에 위치합니다.
 
-겉보기에 단순한 디렉토리 명명 규칙처럼 보이지만, FHS를 정확히 이해해야 하는 이유는 시스템 운영의 거의 모든 작업이 이 약속에 의존하기 때문이다. 패키지 매니저(`apt`, `dnf`)는 바이너리를 `/usr/bin`에, 라이브러리를 `/usr/lib`에, 설정 템플릿을 `/etc`에 배치하기 위해 FHS를 전제한다. 컨테이너 이미지는 호스트와 동일한 트리 구조를 갖는다고 가정한다. 로깅 시스템과 모니터링 에이전트는 `/var/log` 아래에 로그가 있으리라 기대한다.
+회사 비유:
+- 본부 빌딩 1동(`/`) = 모든 부서가 들어있는 큰 빌딩
+- 각 층·방 = 디렉토리
+- `/etc/` = **3층 설정 보관실** (모든 시스템 설정 파일)
+- `/var/log/` = **5층 기록물 보관실** (모든 로그)
+- `/home/` = **8층 직원 개인 자리** (사용자 홈)
+- `/usr/bin/` = **2층 공구실** (모든 사용자가 쓰는 명령어)
 
-이 약속을 깨뜨리는 순간 — 예컨대 앱 로그를 `/home/myapp/logs`에 두면 — logrotate가 알아서 자르지 않고, fail2ban 같은 보안 도구가 패턴을 감지하지 못하며, 새로 합류한 운영자도 어디 봐야 할지 모른다. 보안 사고의 상당수가 잘못된 디렉토리에 잘못된 권한으로 파일을 두면서 시작된다. 결국 FHS는 단순한 컨벤션이 아니라 **다중 도구·다중 사용자·다중 시스템 환경에서의 상호운용성 계약**이다. 이번 과제에서 monitor.log를 굳이 `/var/log/agent-app/`에 두라는 명세도 이 계약을 따르라는 요구다.
+어디에 무엇을 두는지 약속한 표준이 **FHS** (Filesystem Hierarchy Standard).
 
-## 표준 디렉토리
+### 명세 원문 (원본 그대로)
 
-루트 바로 아래 가장 자주 만나는 디렉토리들과 그 역할은 다음과 같다.
+> **디렉토리·환경 변수 정의**
+> - `AGENT_HOME=/home/agent-admin/agent-app`
+> - `AGENT_UPLOAD_DIR=$AGENT_HOME/upload_files`
+> - `AGENT_KEY_PATH=$AGENT_HOME/api_keys/t_secret.key`
+> - `AGENT_LOG_DIR=/var/log/agent-app`
+>
+> **로그 파일 경로**
+> - **/var/log/agent-app/monitor.log**
+
+### 무엇을 어디에 두나
+
+| 항목 | 표준 위치 | 이유 |
+|---|---|---|
+| SSH 설정 | `/etc/ssh/sshd_config` | 시스템 설정은 모두 `/etc`에 |
+| 사용자 앱 | `/home/agent-admin/agent-app` | 사용자 소유 파일은 그 홈에 |
+| 로그 | `/var/log/agent-app/monitor.log` | 모든 로그는 `/var/log`에 |
+| cron 설정 | `/etc/logrotate.d/agent-app` | 시스템 작업 설정 = `/etc` |
+| 시스템 정보 | `/proc/cpuinfo` 등 | 커널이 즉석 생성 |
+
+### 잘 됐는지 확인하기
+
+```bash
+# 1. 표준 디렉토리 확인
+ls -la /etc/ssh/sshd_config
+ls -la /var/log/agent-app/
+ls -la /home/agent-admin/agent-app/
+
+# 2. 마운트된 파일시스템 종류 확인
+mount | head
+```
+
+---
+
+## 구현 방법
+
+### Step 1 — 표준 위치에 디렉토리 생성
+
+명세가 요구하는 디렉토리를 표준 위치에 만들기.
+
+```bash
+# 사용자 홈 아래 (사용자 소유 파일)
+sudo install -d -o agent-admin -g agent-common -m 0750 \
+    /home/agent-admin/agent-app
+sudo install -d -o agent-admin -g agent-common -m 0770 \
+    /home/agent-admin/agent-app/upload_files
+sudo install -d -o agent-admin -g agent-core   -m 0750 \
+    /home/agent-admin/agent-app/api_keys
+
+# 시스템 로그 (모든 시스템 로그는 /var/log)
+sudo install -d -o agent-dev -g agent-core -m 2770 \
+    /var/log/agent-app
+```
+
+`install -d`는 `mkdir + chown + chmod`을 한 번에 처리하는 도구.
+
+### Step 2 — 표준 위치의 의미 따라 권한 다르게
+
+위치마다 권한이 달라요.
+
+| 위치 | 표준 권한 | 이유 |
+|---|---|---|
+| `/etc/*` | `0644` (root 소유) | 모두 읽기 가능, root만 변경 |
+| `/home/<user>/` | `0750` 또는 `0700` | 사용자 본인이 소유 |
+| `/var/log/*` | `2770` (setgid) | 같은 그룹원이 쓰기 가능 |
+| `/usr/bin/*` | `0755` | 모두 실행 가능 |
+
+자세한 권한 설명: [file-permissions.md](./file-permissions.md)
+
+### Step 3 — 검증
+
+```bash
+# 표준 위치에 잘 있는지
+tree -L 2 /home/agent-admin/agent-app 2>/dev/null || ls -la /home/agent-admin/agent-app
+
+ls -la /var/log/agent-app/
+ls -la /etc/ssh/sshd_config
+```
+
+전체 자동화: [setup/04-directories.sh](https://github.com/codewhite7777/codyssey_b1_1/blob/main/setup/04-directories.sh)
+
+---
+
+## 개념
+
+### 주요 디렉토리 한눈에 보기
 
 ```
 /
-├── etc/             정적 시스템 설정 (대부분 텍스트 파일)
-├── home/            일반 사용자 홈 (사용자별 격리 공간)
-├── var/             가변 데이터 (시간이 지나며 변하거나 누적되는 것)
-│   ├── log/         시스템 + 애플리케이션 로그
-│   ├── lib/         애플리케이션 영구 상태 (DB 데이터, 패키지 메타데이터)
-│   └── spool/       처리 대기 작업 (메일 큐, cron 작업 등)
-├── usr/             사용자 영역 프로그램 ("user system resources"의 약자)
-│   ├── bin/         일반 사용자 명령
-│   ├── sbin/        시스템 관리자 명령
-│   └── local/       사이트별 수동 설치 (패키지 매니저가 안 건드림)
-├── bin, sbin/       부팅 시 필요한 핵심 명령
-│                    (현대 Linux는 /usr/bin·/usr/sbin의 심볼릭 링크로 통합)
-├── proc/            ★ 프로세스·커널 상태를 노출하는 가상 파일시스템
-├── sys/             ★ 디바이스·드라이버를 노출하는 가상 파일시스템 (sysfs)
-├── dev/             ★ 디바이스 노드 (블록·캐릭터 디바이스, udev가 동적 관리)
-├── tmp/             재부팅 시 비워지는 임시 공간 (보통 tmpfs로 메모리에 존재)
-├── opt/             3rd-party 패키지의 자체 디렉토리 (예: /opt/google/chrome)
-├── mnt, media/      외부 저장 장치 마운트 지점
-└── root/            root 사용자의 홈 (일반 /home과 분리되어 있는 의도가 있음)
+├── etc/        ← 시스템 설정 (텍스트 파일)
+├── home/       ← 일반 사용자 홈
+├── var/        ← 자주 바뀌는 데이터
+│   ├── log/    ← 모든 로그
+│   ├── lib/    ← 앱 데이터 (DB 등)
+│   └── spool/  ← 처리 대기 작업 (메일, cron)
+├── usr/        ← 사용자 영역 프로그램
+│   ├── bin/    ← 일반 명령
+│   ├── sbin/   ← 관리자 명령
+│   └── local/  ← 수동 설치
+├── proc/       ← ★ 가상 — 프로세스·커널 상태
+├── sys/        ← ★ 가상 — 디바이스 정보
+├── dev/        ← 디바이스 파일
+├── tmp/        ← 임시 (재부팅 시 삭제)
+└── root/       ← root 홈
 ```
 
-각 디렉토리의 분리에는 역사적·실용적 이유가 있다. **`/etc`와 `/var`의 분리**는 "변하지 않는 것"과 "변하는 것"을 나누어, `/etc`는 백업·버전 관리하기 좋고 `/var`는 자주 비우거나 별도 파티션으로 분리할 수 있게 한다. **`/usr`의 의미**는 흔히 오해되는데, 사용자 홈 디렉토리가 아니라 "공유 가능한 read-only 시스템 자원"을 의미한다. 과거에는 `/usr`가 네트워크로 공유되어 여러 머신이 같은 바이너리를 사용하는 모델도 있었다. **`/root`가 `/home`과 분리된 것**도 단순 우연이 아니라, `/home`이 별도 파티션으로 분리되어 마운트가 실패해도 root는 부팅·복구할 수 있도록 한 안전장치다.
-
-## 가상 파일시스템 트리오: /proc, /sys, /dev
-
-위 표에서 ★로 표시한 세 디렉토리는 특별하다. 안의 파일들이 디스크에 실제로 존재하지 않는다는 점에서 그렇다. 이들은 **pseudo-filesystem(가상 파일시스템)**이며, 커널이 자기 상태나 하드웨어 정보를 "파일처럼 보이는 인터페이스"로 노출하는 메커니즘이다.
-
-가장 흔히 만나는 `/proc`을 예로 보자. `cat /proc/cpuinfo`를 실행하면 CPU 정보가 출력되지만, 이 정보는 어디에도 저장되어 있지 않다. 명령을 실행하는 순간 VFS(Virtual File System) layer가 read 시스템 콜을 procfs 핸들러로 라우팅하고, 핸들러는 그때그때 커널 데이터 구조를 스캔해 텍스트로 합성·반환한다. 디스크 I/O는 발생하지 않는다.
+### `/etc` vs `/var` — 변하는 것과 안 변하는 것
 
 ```mermaid
 flowchart LR
-    A["$ cat /proc/cpuinfo"] --> B[read 시스템 콜]
-    B --> C[VFS layer]
-    C --> D[procfs 핸들러]
-    D --> E[커널 데이터 구조<br/>즉석 스캔]
-    E --> F[텍스트 합성]
-    F --> G[사용자에게 반환]
+    A[설정·정적] --> B["/etc/<br/>(텍스트 설정)"]
+    C[데이터·동적] --> D["/var/<br/>(자주 바뀌는 파일)"]
 
-    style A fill:#cce5ff
+    B --> B1["sshd_config<br/>logrotate 설정"]
+    D --> D1["로그, 캐시,<br/>DB 데이터"]
+
+    style B fill:#cce5ff
     style D fill:#ffe6cc
-    style F fill:#ccffcc
 ```
 
-세 가상 파일시스템의 역할은 다음과 같이 분담된다.
+이 분리의 의도:
+- `/etc`는 백업·버전 관리하기 좋음 (잘 안 변함)
+- `/var`는 자주 비우거나 별도 파티션으로 분리 가능 (꽉 차도 시스템 안 깨짐)
 
-```
-/proc       프로세스와 커널 런타임 상태 (POSIX 스타일 텍스트)
-            예: /proc/PID/status, /proc/cpuinfo, /proc/meminfo, /proc/stat
+### `/proc` — 디스크에 없는 가상 파일
 
-/sys        커널이 인식한 객체 모델 (sysfs) — 디바이스, 드라이버, 전원 관리, cgroup
-            예: /sys/class/net/eth0/operstate, /sys/fs/cgroup/
+`/proc/cpuinfo`를 cat하면 CPU 정보가 나와요. 하지만 이 파일은 디스크에 **실제로 존재하지 않습니다**.
 
-/dev        디바이스 노드 — 디스크, 터미널, 의사 디바이스 등
-            예: /dev/sda (디스크), /dev/null (블랙홀), /dev/random (엔트로피)
-```
+```mermaid
+flowchart LR
+    A["cat /proc/cpuinfo"] --> B["커널이 즉석 생성"]
+    B --> C["텍스트 형태로 반환"]
 
-이 메커니즘이 중요한 이유는 **모든 시스템 모니터링 도구의 기반**이기 때문이다. `top`, `ps`, `htop`은 모두 `/proc/PID/stat`을 읽어 정보를 모으고, `free`는 `/proc/meminfo`를 파싱한다. monitor.sh가 CPU·메모리 사용량을 측정하려 할 때 결국 의지하는 것도 이 인터페이스다. 다음 노트들에서 다룰 프로세스 관측 도구들도 모두 procfs 위에 쌓여 있다.
-
-`/proc` 일부는 read-only가 아니라 **write 가능한 커널 파라미터 인터페이스**이기도 하다. 예를 들어 `echo 1 > /proc/sys/net/ipv4/ip_forward`로 IP forwarding을 활성화할 수 있다. `sysctl` 명령은 이 인터페이스를 더 안전하고 추상화된 방식으로 노출한 wrapper다. 과제와 직접 관련은 없지만, 시스템 튜닝의 기본 메커니즘이라 알아두면 좋다.
-
-## 한 번 보자
-
-지금까지의 개념을 직접 확인할 수 있는 명령들을 묶어보자. 먼저 트리 구조와 mount 매핑을 파악하는 도구들이다.
-
-```bash
-ls -F /                       # 루트 트리 — 디렉토리(/), 실행파일(*), 링크(@) 표시
-findmnt                       # 현재 mount 트리 (FHS와 실제 파티션의 매핑)
-df -hT                        # 파일시스템 종류 포함 사용량 (-T가 핵심)
-mount | head                  # mount된 모든 파일시스템 (procfs, sysfs, tmpfs도 보임)
-stat /etc                     # 한 디렉토리의 inode 메타데이터
+    style B fill:#ffe6cc
+    style C fill:#ccffcc
 ```
 
-위 다섯 줄로 시스템의 트리 구조와 실제 파일시스템 매핑을 파악할 수 있다. `findmnt`나 `mount` 출력에서 `proc`, `sysfs`, `tmpfs` 항목이 보일 텐데, 이게 바로 가상 파일시스템들이 트리의 특정 노드에 마운트되어 있다는 증거다.
+read 명령이 들어오는 순간 커널이 현재 상태를 텍스트로 만들어 반환. 디스크 I/O 없음.
 
-이어서 가상 파일시스템을 직접 들여다보자.
+monitor.sh가 CPU·메모리 측정에 사용하는 도구들(`top`, `free`)도 결국 `/proc` 파일을 읽어서 정보를 모아요.
 
-```bash
-cat /proc/self/status         # 'cat' 자신의 프로세스 상태 (self는 호출자 PID로 자동 치환)
-cat /proc/cpuinfo | head -20  # CPU 정보 (디스크 I/O 없이 커널이 합성)
-cat /proc/meminfo | head      # 메모리 정보 (free 명령의 데이터 소스)
-ls -l /proc/$$/fd/            # 현재 셸이 연 파일 디스크립터 ($$ = 현재 PID)
-```
+| 가상 파일 | 무엇 |
+|---|---|
+| `/proc/cpuinfo` | CPU 정보 |
+| `/proc/meminfo` | 메모리 정보 (`free`의 출처) |
+| `/proc/stat` | CPU 사용 시간 (`top`의 출처) |
+| `/proc/PID/status` | 특정 프로세스 상태 |
+| `/sys/class/net/eth0/` | 네트워크 인터페이스 정보 |
 
-`/proc/self/status`를 cat 한 결과의 첫 줄 `Name: cat`은 흥미로운데, 이는 read 시점의 "지금 실행 중인 프로세스"가 cat이라는 의미다. 같은 명령을 다시 실행하면 PID는 매번 달라진다. 정적 파일이 아님을 직접 체감할 수 있는 예다.
+### `/tmp` vs `/var/tmp` (★ 함정)
 
-## 흔한 함정
+이름은 비슷한데 영속성이 완전 달라요.
 
-> [!WARNING]
-> **핵심**: `/tmp`는 보통 **tmpfs(메모리)**로 마운트되어 재부팅 시 자동 비워진다. 영구 임시 데이터는 `/var/tmp`로. 또한 `df`로 용량만 보면 안전해 보여도 **inode 고갈**(`df -i`로 확인)로 `No space left on device` 발생 가능.
-
-FHS를 익힐 때 자주 부딪히는 미묘한 함정들이 몇 가지 있다. 단순한 오해를 넘어, 실제 운영에서 사고를 만드는 종류다.
-
-가장 자주 만나는 함정은 `/tmp`와 `/var/tmp`의 차이다. 이름은 비슷하지만 영속성이 완전히 다른데, `/tmp`는 대부분의 현대 배포판에서 tmpfs(메모리 기반 파일시스템)로 마운트되어 재부팅 시 자동으로 비워지는 반면, `/var/tmp`는 디스크에 위치해 재부팅 후에도 보존된다. "잠깐 쓰고 버릴" 데이터는 `/tmp`에, "재부팅을 견뎌야 하는 임시 데이터"는 `/var/tmp`에 두는 게 원칙이며, 이 구분 없이 캐시를 `/tmp`에 두었다가 재부팅 후 캐시 미스가 폭발하는 사고가 흔하다.
-
-비슷한 종류로 `$PATH`의 우선순위 함정이 있다. 보통 `/usr/local/bin`이 `/usr/bin`보다 먼저 와야 직접 컴파일·설치한 도구가 패키지 매니저로 깔린 시스템 도구보다 우선되는데, 이 순서가 뒤바뀌면 새로 빌드한 nginx를 실행한다고 생각했지만 실제로는 시스템 nginx가 실행되는 식의 디버깅하기 어려운 문제가 생긴다.
-
-레거시와 현대의 공존이 만드는 함정도 있다. 현대 Linux는 거의 모두 systemd로 전환했지만 `/etc/init.d` 디렉토리는 backwards compatibility를 위해 남아 있고, 이를 모르고 새 서비스 스크립트를 init.d에 두면 systemd가 인식하지 않아 부팅 시 자동 시작이 안 된다. 새 systemd unit 파일은 `/etc/systemd/system/` 또는 `/usr/lib/systemd/system/`에 두는 게 표준이다. 한편 `/dev/null`의 동작 모델도 미리 알아두면 좋은데, 이름은 "비어 있는 파일"처럼 보이지만 실제로는 character device여서 write는 항상 즉시 성공하고 read는 즉시 EOF를 반환한다. 그래서 `command > /dev/null`이 출력을 버리는 표준 패턴이 된다.
-
-마지막으로 운영 모니터링에서 자주 놓치는 inode 고갈 함정이 있다. ext4 같은 파일시스템은 파일 메타데이터(inode)와 실제 데이터를 별도 공간에 저장하는데, 작은 파일이 매우 많이 생기면 디스크 용량은 남았는데 inode가 다 떨어져서 `No space left on device` 에러가 발생한다. `df`로 사용량만 보면 정상으로 보이고 `df -i`로 inode 사용량을 함께 봐야 진단되는데, 메일 서버나 캐시 디렉토리에서 특히 흔히 일어난다.
-
-## B1-1 매핑
-
-이번 과제의 모든 디렉토리 요구사항은 FHS의 자연스러운 적용이다. 위 개념과 매핑해보면 다음과 같다.
-
-| 요구사항 | 경로 | FHS 관점의 설계 의도 |
+| 디렉토리 | 영속성 | 용도 |
 |---|---|---|
-| `sshd_config` 수정 | `/etc/ssh/sshd_config` | 시스템 데몬 설정은 모두 `/etc` 아래 정적 텍스트로 |
-| 앱 홈 (`AGENT_HOME`) | `/home/agent-admin/agent-app` | 사용자 소유 애플리케이션은 그 사용자 홈 아래 |
-| 모니터 로그 (`monitor.log`) | `/var/log/agent-app/` | 모든 가변 로그의 표준 위치 |
-| CPU·메모리·디스크 측정 | `/proc/stat`, `/proc/meminfo` | 커널 런타임 상태는 procfs 인터페이스로 |
-| 임시 작업 파일 (있다면) | `/tmp` | 휘발성 임시 데이터의 표준 위치 |
+| `/tmp` | 재부팅 시 **삭제** (보통 tmpfs = 메모리) | 정말 잠깐 쓰고 버릴 데이터 |
+| `/var/tmp` | 재부팅 후에도 **유지** | 캐시 등 보존 필요한 임시 데이터 |
 
-특히 주목할 점은 **monitor.sh의 정보 수집이 결국 procfs 의존**이라는 사실이다. `top`, `ps`, `free`, `df` 같은 도구를 wrapping하든, `/proc`을 직접 파싱하든, 데이터의 출처는 동일하다. 이 노트의 핵심 통찰 — "가상 파일시스템이 시스템 관측의 기반" — 이 자연스럽게 다음 학습으로 연결된다.
+캐시를 `/tmp`에 두면 재부팅 후 cache miss 폭발 사고. 자주 일어남.
 
-## 인접 토픽 (확장 학습)
+### B1-1의 표준 위치 매핑
 
-<details>
-<summary><b>응용 토픽 — mount namespace·bind mount·overlayfs·VFS (펼치기)</b></summary>
+| B1-1 요구 | 표준 위치 | FHS 의도 |
+|---|---|---|
+| sshd 설정 | `/etc/ssh/sshd_config` | 시스템 데몬 설정 = `/etc` |
+| logrotate 설정 | `/etc/logrotate.d/agent-app` | 시스템 작업 설정 = `/etc` |
+| 앱 홈 | `/home/agent-admin/agent-app` | 사용자 소유 앱 = 사용자 홈 |
+| 로그 | `/var/log/agent-app/` | 모든 로그 = `/var/log` |
+| 측정 데이터 출처 | `/proc/*` | 커널 상태 = procfs |
 
-이 노트의 내용을 더 깊이 파고들고 싶다면 컨테이너 시대의 응용 토픽들로 확장할 수 있다. 모두 FHS의 단일 네임스페이스 모델 위에 쌓인 추상화로, 격리·재사용·효율성의 세 축으로 정리해 보면 이해가 쉽다.
+이 매핑이 자연스럽게 따라가면 logrotate·systemd·다른 운영 도구가 모두 "내 파일 어디 있는지" 자동으로 알아서 동작.
 
-격리의 가장 직접적인 응용은 mount namespace다. 컨테이너가 호스트와 분리된 자기만의 `/`를 갖는 메커니즘으로, Docker 컨테이너 안에서 `ls /`를 실행하면 호스트와 완전히 다른 트리가 보이는 이유가 이것이다. 커널이 프로세스에게 격리된 mount table을 부여한 결과인데, FHS는 namespace 안에서도 동일하게 적용되어 컨테이너 안의 `/etc`도 여전히 설정 디렉토리다. 이와 짝을 이루는 메커니즘이 bind mount(`mount --bind /src /dst`)로, 같은 디렉토리를 트리의 다른 위치에 노출하는 기능이며 Docker의 `-v` 옵션으로 호스트 디렉토리를 컨테이너에 주입하거나 `/run`을 임시로 다른 곳에 보존하는 용도로 쓰인다.
+### inode 고갈 (참고)
 
-재사용·효율성 측면의 핵심 기술은 overlayfs로, 컨테이너 이미지의 레이어드 파일시스템 구현이다. 베이스 이미지(lower)와 읽기·쓰기 가능 레이어(upper), 작업 공간(work)을 합쳐 마치 단일 파일시스템처럼 보이게 하는데, Docker 이미지가 빠르게 빌드되고 효율적으로 저장되는 이유가 이 layered 구조 때문이다.
+용량은 안 찼는데 새 파일 못 만드는 경우. **inode**(파일 메타데이터 저장 슬롯)가 다 떨어진 거예요.
 
-이 모든 추상화의 토대에는 VFS layer가 있다. ext4·XFS·btrfs·tmpfs·NFS 같이 서로 다른 파일시스템을 단일 인터페이스로 통합하는 커널의 layer로, inode·dentry·superblock 같은 공통 추상화 위에서 각 파일시스템이 자기 구현을 제공한다. `/proc`도 이 layer 위에 구현된 가상 파일시스템이다.
+```bash
+df -i /
+```
 
-이 모든 응용은 결국 "트리 구조 하나로 통합된 네임스페이스"라는 FHS의 토대 위에서만 의미가 있다. Windows의 드라이브 분리 모델로는 만들기 어려운 추상화들이다.
+작은 파일이 매우 많은 환경(메일 서버, 캐시)에서 흔히 발생.
 
-</details>
+---
 
 ## 참고
 
 - `man 7 hier` — 표준 디렉토리 구조의 정식 매뉴얼
-- `man 7 file-hierarchy` — systemd 진영의 약간 다른 관점
-- [FHS 3.0 공식 문서](https://refspecs.linuxfoundation.org/FHS_3.0/fhs/index.html)
-- `man 5 proc` — `/proc` 내부의 모든 파일 의미
+- 관련 노트: [file-permissions.md](./file-permissions.md) — 권한 설정
+- 관련 노트: [cpu-measurement.md](./cpu-measurement.md) — `/proc` 활용
 
 ---
-출처: B1-1 시스템 관제 자동화 (Layer 1.1) · 학습일: 2026-05-07
+출처: B1-1 (Layer 1.1) · 학습일: 2026-05-12

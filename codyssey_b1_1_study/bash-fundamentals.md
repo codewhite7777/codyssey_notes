@@ -1,233 +1,296 @@
 # Bash 스크립팅 기초
 
-> **TLDR** · shebang(`#!/bin/bash`)로 인터프리터 지정, exit code 0/non-zero로 성공/실패 신호, 변수는 `VAR=value` (★ `=` 양쪽 공백 X). **항상 `"$VAR"` 큰따옴표로 감싸기** — 공백 포함 변수의 word-splitting 방지가 가장 흔한 버그 원인. `shellcheck`가 필수 정적 분석 도구.
+> **한 줄로** · Bash는 Linux의 **자동화 표준 언어**. 첫 줄에 `#!/usr/bin/env bash`로 인터프리터 지정, 변수는 `VAR=값` (★ `=` 양쪽 공백 X), **변수 사용 시 항상 `"$VAR"` 큰따옴표**가 가장 흔한 버그를 막아요. B1-1은 명세에서 **Bash만 사용**(Python 등 금지)을 요구.
 
-## 개요
+---
 
-Bash 스크립팅은 Linux 운영의 기본 언어다. 시스템 자동화, CI/CD, 설치 스크립트, monitor.sh 같은 운영 도구가 모두 Bash로 작성된다. Python·Go보다 표현력은 떨어지지만 시스템 명령과의 통합, 어디서나 동작하는 가용성, 짧은 코드가 강점이다.
+## 과제 요구사항
 
-이번 과제는 명세에서 명시적으로 "Bash로만 작성, Python 등 대체 금지"라고 요구한다. 운영 자동화 도구를 Bash로 만드는 게 학습 목표.
+### 이게 무슨 작업?
 
-## 왜 알아야 하나
+monitor.sh와 setup 스크립트들을 **Bash로 작성**하는 게 이번 과제의 핵심. Python·Go 같은 다른 언어로는 안 됩니다.
 
-Bash의 함정 대부분은 quoting과 변수 expansion에서 비롯된다. 가장 자주 만나는 버그는 공백 포함 변수의 word-splitting (`$file` → `cat file` 대신 `cat` `file1` `file2` 처럼 분해), unset 변수가 빈 문자열로 평가되는 함정, exit code 무시 등이다. shellcheck로 정적 분석할 수 있지만 근본적으로 문법을 정확히 이해해야 사고를 줄인다.
+회사 비유:
+- Bash = **만능 자동화 도구** (Linux에는 항상 깔려있음)
+- shebang(`#!/usr/bin/env bash`) = **"이 작업은 Bash로 하세요" 라벨**
+- exit code = **작업 결과 보고서** (0 = 성공, 다른 숫자 = 실패)
+- 변수 = **작업 메모지** (값을 임시로 저장)
 
-또한 systemd unit, Docker entrypoint, CI 워크플로우 등 다양한 환경에서 Bash 스크립트가 실행되므로, 이식성·안전성 패턴을 알아두는 게 운영자의 기본기다.
+### 명세 원문 (원본 그대로)
 
-## shebang — 인터프리터 지정
+> **구현 언어**
+> - **Bash 스크립트로 작성** (Python·Go 등 대체 금지)
+>
+> **권장 헤더**
+> ```bash
+> #!/usr/bin/env bash
+> set -euo pipefail
+> ```
 
-스크립트 첫 줄은 어떤 인터프리터로 실행할지 지정한다.
+### 무엇을 익히나
 
-```bash
-#!/bin/bash                    # bash 절대 경로 (Linux 표준)
-#!/usr/bin/env bash            # PATH에서 bash 찾기 (이식성 ↑)
-#!/bin/sh                      # POSIX sh (bash 기능 X, 더 portable)
-```
+| 기본기 | 설명 |
+|---|---|
+| shebang | 어떤 인터프리터로 실행할지 첫 줄에 명시 |
+| exit code | 0(성공)·non-zero(실패) |
+| 변수와 quoting | `"$VAR"` 큰따옴표 필수 |
+| 특수 변수 | `$0`, `$1`, `$?`, `$$` 등 |
+| 함수 | 재사용 가능한 코드 블록 |
 
-`#!/usr/bin/env bash`가 더 portable한 이유는 macOS·BSD에서 bash가 `/usr/local/bin/bash`에 있을 수 있어 절대 경로가 안 맞을 수 있기 때문이다. env가 PATH를 따라 bash를 찾아준다. 단 `env` 자체는 거의 모든 시스템에서 `/usr/bin/env`에 있어 안정적.
-
-shebang은 파일 첫 줄 정확히 `#!`로 시작해야 한다. 공백 X, BOM X, 다른 텍스트 X.
-
-## exit code — 성공·실패 신호
-
-Bash 명령의 종료 상태는 정수다. **0 = 성공, non-zero = 실패**.
-
-```
-$ ls /tmp
-$ echo $?
-0
-
-$ ls /nonexistent
-ls: cannot access '/nonexistent': No such file or directory
-$ echo $?
-2
-```
-
-`$?`는 직전 명령의 exit code. 스크립트에서 명시적으로 exit code 지정:
+### 잘 됐는지 확인하기
 
 ```bash
-exit 0    # 성공
-exit 1    # 일반 실패
-exit 2    # 명령 사용법 오류 (conventional)
-exit 130  # SIGINT (Ctrl+C) — 128 + 시그널 번호
+# 1. 스크립트 실행 가능
+chmod +x monitor.sh
+./monitor.sh
+
+# 2. exit code 확인
+echo $?    # 0이면 성공
+
+# 3. shellcheck로 정적 분석
+shellcheck monitor.sh
 ```
 
-`if`·`while`·`&&`·`||` 같은 control flow는 모두 exit code를 기반으로 동작한다.
+---
+
+## 구현 방법
+
+### Step 1 — shebang으로 인터프리터 지정
+
+스크립트 첫 줄은 항상:
 
 ```bash
-if grep -q "pattern" file; then
-    # grep이 0(매칭됨) 반환 시 실행
-    echo "found"
-fi
-
-command_a && command_b   # a 성공 시에만 b 실행
-command_a || command_b   # a 실패 시에만 b 실행
+#!/usr/bin/env bash
 ```
 
-## 변수와 quoting
+| 표현 | 의미 |
+|---|---|
+| `#!/bin/bash` | bash의 절대 경로 (Linux 표준) |
+| `#!/usr/bin/env bash` | **PATH에서 bash 찾기** (이식성 ↑, 권장) |
+| `#!/bin/sh` | POSIX sh (bash 확장 기능 못 씀) |
 
-Bash 변수는 `name=value` 형식 (★ `=` 양쪽 공백 X).
+`env` 형식이 권장 — macOS·BSD에선 bash 위치가 달라서 절대 경로가 안 맞을 수 있음.
+
+### Step 2 — 변수 사용
 
 ```bash
-name="alice"
-age=30
-greet="Hello, $name"           # 큰따옴표는 변수 expansion
-greet='Hello, $name'           # 작은따옴표는 expansion 안 함 → 그대로 출력
+# 선언 (★ = 양쪽 공백 X)
+NAME="agent-admin"
+PORT=15034
+
+# 사용 (★ 항상 큰따옴표)
+echo "Hello, $NAME"
+echo "Port: $PORT"
 ```
 
-**큰따옴표 quoting의 중요성** — 가장 흔한 Bash 버그의 근원이다.
+**가장 흔한 실수**:
+```bash
+# ❌ 공백이 있으면 안 됨
+NAME = "agent-admin"      # bash 에러
+
+# ❌ 큰따옴표 안 쓰면 위험
+FILE="my document.txt"
+cat $FILE                 # cat my document.txt 3개 인자 → 실패
+cat "$FILE"               # ✅ cat "my document.txt" 1개 인자
+```
+
+### Step 3 — 특수 변수 활용
 
 ```bash
-file="my document.txt"
-cat $file                      # ★ word-split → cat my document.txt (3개 인자!)
-cat "$file"                    # 정상 → cat 하나의 인자
-```
+#!/usr/bin/env bash
+# myscript.sh hello world
 
-shellcheck가 항상 경고하는 패턴: `"$var"`, `"$@"`, `"${array[@]}"`. 거의 모든 변수 사용은 따옴표로 감싸야 안전하다.
-
-특수 변수의 의미를 그림으로 정리:
-
-```mermaid
-flowchart TD
-    A["스크립트 실행<br/>./script.sh arg1 arg2"] --> B["$0 = ./script.sh<br/>(스크립트 이름)"]
-    A --> C["$1 = arg1<br/>$2 = arg2<br/>(위치 인자)"]
-    A --> D["$# = 2<br/>(인자 개수)"]
-    A --> E["$@ = arg1 arg2<br/>(개별 단어로 expand)"]
-    A --> F["$? = 직전 명령<br/>exit code"]
-    A --> G["$$ = 현재 셸 PID"]
-
-    style A fill:#cce5ff
+echo "스크립트 이름: $0"   # ./myscript.sh
+echo "첫 인자: $1"          # hello
+echo "둘째 인자: $2"        # world
+echo "인자 개수: $#"        # 2
+echo "PID: $$"              # 현재 셸 PID
+echo "직전 결과: $?"        # 0 = 직전 명령 성공
 ```
 
 | 변수 | 의미 |
 |---|---|
 | `$0` | 스크립트 이름 |
-| `$1`, `$2`, ... | 위치 인자 |
+| `$1`, `$2` | 위치 인자 |
 | `$#` | 인자 개수 |
 | `$@` | 모든 인자 (개별 단어로) |
-| `$*` | 모든 인자 (한 문자열로) |
 | `$?` | 직전 명령 exit code |
 | `$$` | 현재 셸 PID |
-| `$!` | 마지막 백그라운드 프로세스 PID |
 
-## 한 번 보자
-
-기본 스크립트 패턴:
+### Step 4 — exit code로 결과 신호
 
 ```bash
 #!/usr/bin/env bash
-# script.sh — 사용 예시
 
-# 변수 (default 값 처리)
-name="${1:-world}"             # 첫 인자, 없으면 'world'
-
-# 출력
-echo "Hello, $name!"
-
-# 조건
-if [ "$name" = "alice" ]; then
-    echo "Welcome back, alice"
+if [ ! -f "/etc/ssh/sshd_config" ]; then
+    echo "[ERROR] sshd_config 없음"
+    exit 1
 fi
 
-# exit
+echo "[OK] sshd_config 확인됨"
 exit 0
 ```
 
-```
-$ chmod +x script.sh
-$ ./script.sh
-Hello, world!
-$ ./script.sh alice
-Hello, alice!
-Welcome back, alice
-$ echo $?
-0
+| Exit code | 의미 |
+|---|---|
+| `0` | 성공 |
+| `1` | 일반 실패 |
+| `2` | 명령 사용법 오류 |
+| `130` | Ctrl+C로 종료 (128 + 시그널 번호) |
+
+### Step 5 — 함수로 재사용
+
+```bash
+#!/usr/bin/env bash
+
+log() {
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*"
+}
+
+check_file() {
+    local path="$1"
+    if [ -f "$path" ]; then
+        log "[OK] $path 존재"
+        return 0
+    else
+        log "[FAIL] $path 없음"
+        return 1
+    fi
+}
+
+check_file "/etc/ssh/sshd_config" || exit 1
+log "검증 완료"
 ```
 
-shellcheck로 정적 분석:
+`local`은 함수 안에서만 유효한 변수. 함수 밖 변수와 충돌 방지.
 
+전체 구현: [bin/monitor.sh](https://github.com/codewhite7777/codyssey_b1_1/blob/main/bin/monitor.sh)
+
+---
+
+## 개념
+
+### Quoting — 큰따옴표 vs 작은따옴표
+
+```bash
+NAME="alice"
+
+echo "Hello, $NAME"     # Hello, alice (큰따옴표 = 변수 expand)
+echo 'Hello, $NAME'     # Hello, $NAME (작은따옴표 = 그대로)
 ```
-$ shellcheck script.sh
-(아무 출력 없으면 OK)
 
-# 문제 있으면:
-In script.sh line 7:
+| 따옴표 | 변수 expand | glob expand | 활용 |
+|---|---|---|---|
+| `"..."` | ✅ | ❌ | 보통 |
+| `'...'` | ❌ | ❌ | 리터럴 전달 (정규식 등) |
+| 따옴표 X | ✅ | ✅ | ★ word-split 위험 |
+
+### 왜 큰따옴표가 필요한가?
+
+```mermaid
+flowchart LR
+    A["FILE='my doc.txt'"] --> B[cat $FILE]
+    A --> C["cat \"$FILE\""]
+
+    B --> D["★ cat my doc.txt<br/>(2개 인자로 분해)<br/>실패"]
+    C --> E["✅ cat 'my doc.txt'<br/>(1개 인자)<br/>성공"]
+
+    style D fill:#ffcccc
+    style E fill:#ccffcc
+```
+
+Bash는 변수 값을 그대로 끼워넣고 다시 토큰화(word-split). 큰따옴표가 이 분해를 막아요.
+
+### `[` vs `[[` (Bash 확장)
+
+| 형식 | 표준 | 차이 |
+|---|---|---|
+| `[ "$a" = "$b" ]` | POSIX sh | 모든 셸 호환, but 따옴표 필수 |
+| `[[ $a = $b ]]` | bash 확장 | 따옴표 자동, 정규식 지원, glob 지원 |
+
+```bash
+# [ 사용 - 따옴표 필수
+if [ "$NAME" = "alice" ]; then ...
+
+# [[ 사용 - 따옴표 없어도 OK
+if [[ $NAME == "alice" ]]; then ...
+
+# [[는 정규식도
+if [[ $EMAIL =~ ^.+@.+\..+ ]]; then ...
+```
+
+bash 스크립트라면 `[[`가 더 안전·편리. POSIX sh 호환 필요하면 `[`.
+
+### 조건 표현 — 자주 쓰는 것
+
+| 표현 | 의미 |
+|---|---|
+| `[ -f file ]` | 파일 존재 |
+| `[ -d dir ]` | 디렉토리 존재 |
+| `[ -z "$s" ]` | 문자열 비어있음 |
+| `[ -n "$s" ]` | 문자열 비어있지 않음 |
+| `[ "$a" = "$b" ]` | 문자열 같음 |
+| `[ "$a" -eq "$b" ]` | 숫자 같음 |
+| `[ "$a" -gt "$b" ]` | 숫자 크다 |
+
+### `&&`와 `||` — 조건부 실행
+
+```bash
+# 성공 시에만 다음 실행
+mkdir /tmp/foo && cd /tmp/foo
+
+# 실패 시에만 다음 실행
+grep "pattern" file || echo "not found"
+
+# 조합
+[ -f /etc/foo ] && echo "exists" || echo "missing"
+```
+
+### `shellcheck` — 정적 분석 (★ 매우 권장)
+
+```bash
+$ shellcheck monitor.sh
+
+In monitor.sh line 7:
 if [ $name = "alice" ]; then
      ^---^ SC2086: Double quote to prevent globbing and word splitting.
 ```
 
-## 흔한 함정
+거의 모든 흔한 버그를 자동 검출. CI에 통합 권장.
 
-> [!WARNING]
-> **변수 quoting 누락**: `cat $file`은 공백 포함 파일명에서 깨짐 (`cat my document.txt`로 3개 인자 분해). **항상 `"$file"`** 사용. shellcheck로 정적 검출 가능, CI에 통합 권장.
-
-Bash 함정의 절반은 quoting 누락이다. 공백 포함 변수, glob 문자(`*`, `?`)가 포함된 변수가 unquoted로 사용되면 의도하지 않은 word-splitting이나 pathname expansion이 발생한다. `IFS=$' \t\n'`이 기본이라 공백·탭·개행에서 분리된다.
-
-`=` 양쪽 공백 함정도 자주 만난다. `name = alice`는 "`name` 명령을 `=` `alice` 인자로 실행" 으로 해석되어 실패. 반드시 `name=alice`(공백 없음).
-
-산술 비교에서 `[ $a -gt 10 ]`은 `$a`가 빈 문자열이면 syntax error. `[ "${a:-0}" -gt 10 ]`처럼 default 값 처리 또는 `[[ ${a:-0} -gt 10 ]]`(bash 확장 문법) 사용이 안전하다.
-
-exit code 무시도 흔한 버그다. `cmd1 | cmd2`에서 `cmd1`이 실패해도 파이프 전체 exit code는 `cmd2`의 것이다. `set -o pipefail`로 해결 (다음 노트).
-
-bash와 sh 혼동도 자주 만나는 함정이다. `#!/bin/sh`로 시작했는데 `[[`나 `array=()` 같은 bash 확장 문법을 쓰면 dash(Debian sh)에서 깨진다. bash 기능을 쓸 거면 명시적으로 `#!/usr/bin/env bash`.
-
-## B1-1 매핑
-
-monitor.sh와 setup 스크립트의 기본 구조:
+### B1-1 monitor.sh의 기본 구조
 
 ```bash
 #!/usr/bin/env bash
 # monitor.sh — 시스템 관제 자동화
 
-set -euo pipefail              # 안전 모드 (다음 노트)
+set -euo pipefail     # 안전 모드 (다음 노트)
 
-# 변수 (환경 변수 default 값으로 처리)
+# 환경 변수 (default 처리)
 LOG_FILE="${AGENT_LOG_DIR:-/var/log/agent-app}/monitor.log"
-APP_NAME="agent_app.py"
 
-# 함수 활용
+# 로그 함수
 log() {
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*" | tee -a "$LOG_FILE"
+    echo "[$(date '+%Y-%m-%dT%H:%M:%S')] $*" | tee -a "$LOG_FILE"
 }
 
-# 프로세스 확인 (|| true로 set -e 우회)
-PID=$(pgrep -f "$APP_NAME" || true)
-if [ -z "$PID" ]; then
-    log "[ERROR] $APP_NAME not running"
-    exit 1
-fi
-
-log "[OK] PID=$PID"
+# 메인 로직
+log "monitor.sh 시작"
+# ... 측정 ...
+log "monitor.sh 완료"
 exit 0
 ```
 
-이번 과제의 모든 스크립트는 이 기본 패턴 위에 쌓인다. 다음 노트들에서 set·trap·control flow·substitution을 각각 깊이 다룬다.
+이 패턴 위에 set·trap·control flow를 더 쌓아 갑니다. 다음 노트들 참조.
 
-## 인접 토픽
-
-<details>
-<summary><b>응용 토픽 — POSIX sh·shellcheck·shfmt·dash·zsh (펼치기)</b></summary>
-
-POSIX sh는 Bash의 부분집합으로, 더 portable하지만 array·`[[`·`(())` 같은 편의 기능이 없다. 컨테이너 base image(alpine, busybox)는 보통 sh(dash)만 가지므로 sh 호환 스크립트를 작성하면 어디서나 동작한다. 단 운영 자동화 도구는 보통 Bash 가용성을 전제로 작성.
-
-zsh는 macOS 기본 셸로, Bash와 거의 호환되지만 일부 미묘한 차이가 있다. 인터랙티브 사용에는 우수하지만 스크립트는 보통 Bash 또는 sh로 작성한다.
-
-shellcheck는 셸 스크립트 정적 분석 도구로 거의 필수다. quoting 누락, dead code, 잘못된 비교 등을 자동 검출한다. CI 파이프라인에 통합 권장.
-
-shfmt는 셸 스크립트 자동 포맷터. `shfmt -w script.sh`로 일관된 들여쓰기.
-
-dash는 Debian·Ubuntu의 `/bin/sh` 구현으로 매우 가볍고 빠르지만 Bash 확장은 지원 안 함. 시스템 부트 스크립트가 빠른 이유.
-
-Bash 5.x는 4.x에 비해 associative array 개선, BASH_ARGV0 추가 등 여러 향상이 있다. macOS는 라이선스 이슈로 Bash 3.x를 기본 유지 — `brew install bash`로 최신 버전 설치 가능.
-
-</details>
+---
 
 ## 참고
 
-- `man bash` — INVOCATION, EXPANSION, QUOTING 섹션
-- [Bash Pitfalls](https://mywiki.wooledge.org/BashPitfalls) — 흔한 함정 목록
+- `man bash` — INVOCATION, QUOTING 섹션
 - [shellcheck.net](https://www.shellcheck.net/) — 온라인 정적 분석
-- [Google Shell Style Guide](https://google.github.io/styleguide/shellguide.html)
+- 관련 노트: [bash-set-safe.md](./bash-set-safe.md) — 안전 모드
+- 관련 노트: [bash-control-flow.md](./bash-control-flow.md) — if/for/case
 
 ---
-출처: B1-1 (Layer 4.1) · 학습일: 2026-05-11
+출처: B1-1 (Layer 4.1) · 학습일: 2026-05-12
