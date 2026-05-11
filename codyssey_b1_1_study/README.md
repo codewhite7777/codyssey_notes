@@ -41,9 +41,13 @@
 | [bash-substitution.md](./bash-substitution.md) | `$()`·`${var:-x}`·`${var%suffix}`·리다이렉션 |
 | [bash-trap.md](./bash-trap.md) | trap EXIT cleanup, ERR 추적, 시그널 무시 |
 
-## Layer 5 (예정)
+## Layer 5 — 자동화 & 운영
 
-- Layer 5 — 자동화 & 운영 (cron, logrotate)
+| 노트 | 핵심 주제 |
+|---|---|
+| [cron-fundamentals.md](./cron-fundamentals.md) | crontab 형식, user vs system cron, 실행 흐름 |
+| [cron-environment-gotchas.md](./cron-environment-gotchas.md) | non-interactive 환경, PATH 부재, 디버깅 |
+| [log-rotation.md](./log-rotation.md) | logrotate 설정, copytruncate, 직접 구현 vs logrotate |
 
 ## 노트 양식
 
