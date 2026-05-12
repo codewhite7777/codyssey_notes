@@ -41,8 +41,9 @@
 
 ## 학습 자산
 - 학습 컨벤션: [`CLAUDE.md`](./CLAUDE.md)
-- 회고 노트: [`retrospectives/`](./retrospectives/)
 - B1-1 학습: [`codyssey_b1_1_study/`](./codyssey_b1_1_study/) — 21개 노트
+- **회고 노트**: [`retrospectives/`](./retrospectives/)
+  - [2026-05-12 B1-1 트러블슈팅 5건](./retrospectives/2026-05-12-b1-1-troubleshooting.md) — mktemp 권한·logrotate 보안·SIGPIPE×pipefail·파일명 불일치·GLIBC 미스매치
 
 ## 누적 통계
 - 완료: 0 / 15 (B1-1 코드 작성 완료, 평가 대기)
