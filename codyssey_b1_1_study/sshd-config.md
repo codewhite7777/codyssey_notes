@@ -186,14 +186,19 @@ May 12 03:14:15 host sshd: Failed password for postgres from 92.x.x.x port 51234
 
 ```mermaid
 flowchart LR
-    A[설정 파일 수정] --> B[systemctl reload]
-    B --> C[✅ 새 설정 적용]
+    A([설정 파일 수정]) --> B([systemctl reload])
+    B --> C([새 설정 적용 ✅])
+    A -.-> X([옛 설정 그대로 ❌])
 
-    A -.->|reload 안 함| X[❌ 옛 설정 그대로]
+    linkStyle 2 stroke:#c05a5a,stroke-width:2px,stroke-dasharray:5
 
-    style C fill:#ccffcc
-    style X fill:#ffcccc
+    style A fill:#dbe9ff,stroke:#5a8fc0,stroke-width:2px
+    style B fill:#ffe6cc,stroke:#c08f5a,stroke-width:2px
+    style C fill:#ccffcc,stroke:#5ac08f,stroke-width:2px
+    style X fill:#ffd6d6,stroke:#c05a5a,stroke-width:2px
 ```
+
+→ **빨간 점선** = `reload 안 했을 때` 경로 (옛 설정 잔존).
 
 "분명 파일은 바꿨는데 왜 안 먹지?" 함정의 90%가 reload 잊음.
 
