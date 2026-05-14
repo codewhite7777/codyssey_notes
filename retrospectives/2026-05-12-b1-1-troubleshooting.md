@@ -297,9 +297,63 @@ orb create --arch amd64 ubuntu:24.04 codyssey-b1-1
 
 ---
 
+## 함정 6 (★ 신규 환경): Ubuntu 24.04 에서 `/run/sshd` 부재
+
+> **한 줄로** · 24.04 갓 설치 환경에서 `openssh-server` 가 막 설치되어 sshd 데몬이 한 번도 안 뜨면 `/run/sshd` 디렉토리가 없음. `setup/01-ssh.sh` 의 `sshd -t` 가 "Missing privilege separation directory" 로 실패. `mkdir -p /run/sshd` 한 줄로 회피.
+
+### 회사 비유
+
+새 사무실 입주 첫날 — 화장실 위치(`/run/sshd`)가 빌딩 설계도에는 있지만 청소부(systemd) 가 한 번 청소하기 전까지 실제로 만들어지지 않음. 안전 점검관(`sshd -t`)이 위치 확인하려는데 없어서 "안전 검사 불가" 보고. **수동으로 한 번 만들어두면 해결**.
+
+### 무슨 일
+
+```mermaid
+flowchart LR
+    A["Ubuntu 24.04<br/>+ apt install openssh-server"] --> B["sshd 데몬<br/>한 번도 안 뜸"]
+    B --> C["/run/sshd<br/>디렉토리 부재"]
+    C -->|"sshd -t 호출"| D["★ Missing privilege<br/>separation directory"]
+    E["mkdir -p /run/sshd"] --> F["✅ sshd -t 통과"]
+
+    style D fill:#ffd6d6,stroke:#c05a5a,stroke-width:2px
+    style F fill:#ccffcc,stroke:#5ac08f,stroke-width:2px
+```
+
+실제 메시지:
+```
+Missing privilege separation directory: /run/sshd
+[ERROR] sshd_config 문법 오류
+```
+
+22.04 에서는 어떤 이유로 `/run/sshd` 가 자동 생성됐지만 24.04 신규 환경에선 명시적 처리 필요.
+
+### 해결 (commit `3aedeb7`)
+
+`setup/01-ssh.sh` 에 한 줄 추가 + `reload` → `restart` 변경:
+
+```bash
+# /run/sshd 보장 (Ubuntu 24.04 함정 대응)
+sudo mkdir -p /run/sshd
+
+# 문법 검증
+if ! sudo sshd -t; then ...
+
+# 데몬 시작·재시작 (24.04 신규는 첫 시작 필요)
+sudo systemctl enable ssh 2>/dev/null || true
+sudo systemctl restart ssh 2>/dev/null || sudo systemctl restart sshd
+```
+
+### 배운 점
+
+- **신규 설치 환경 vs 운영 환경의 차이** — 데몬이 한 번이라도 떠야 만들어지는 런타임 디렉토리들이 있음
+- **`systemctl reload` 는 데몬이 떠 있어야 가능** — 첫 시작에는 `restart` 사용이 안전
+- **OS 버전마다 미묘한 동작 차이** — 22.04 → 24.04 마이그레이션의 흔한 함정
+- **운영 스크립트는 "0일차" 환경을 가정해야 견고** — 우리 setup-all.sh 멱등성의 진정한 의미는 *어떤 부분 상태든 + 신규 환경*에서 동일하게 수렴
+
+---
+
 ## 종합 — 운영 엔지니어링의 보편적 함정
 
-5개 함정을 추상화하면 운영 자동화에서 자주 만나는 패턴이 보임:
+6개 함정을 추상화하면 운영 자동화에서 자주 만나는 패턴이 보임:
 
 | 함정 | 보편 패턴 |
 |---|---|
@@ -314,15 +368,15 @@ orb create --arch amd64 ubuntu:24.04 codyssey-b1-1
 명세의 자기평가 항목 중:
 > "트러블슈팅을 통해 무엇이 어디에서 막혔고 어떻게 해결했는지를 설명할 수 있다"
 
-→ 위 5개 함정 각각이 **재현 가능한 사례** + **원인 분석** + **해결 코드** + **운영 일반화** 가 갖춰진 풍부한 답변 재료.
+→ 위 6개 함정 각각이 **재현 가능한 사례** + **원인 분석** + **해결 코드** + **운영 일반화** 가 갖춰진 풍부한 답변 재료.
 
-특히 함정 3 (SIGPIPE × pipefail) 은 **운영 자동화 표준 함정** 중 하나로, "안전 모드 (`set -euo pipefail`) 의 적용 범위와 한계" 같은 깊이 있는 답변에 최적.
+특히 함정 3 (SIGPIPE × pipefail) 은 **운영 자동화 표준 함정** 중 하나로, "안전 모드 (`set -euo pipefail`) 의 적용 범위와 한계" 같은 깊이 있는 답변에 최적. 함정 6 (`/run/sshd` 부재) 는 *"멱등성·견고성이 신규 환경에서도 동작하는가"* 에 답할 때 활용.
 
 ---
 
 ## 참고
 
-- 관련 commit: `2793402`, `415c3e0`, `45db2e7`, `efc4abd`, `bb3fac9`
+- 관련 commit: `2793402`, `415c3e0`, `45db2e7`, `efc4abd`, `bb3fac9`, `3aedeb7`
 - 학습 노트: [bash-set-safe](../codyssey_b1_1_study/bash-set-safe.md), [cron-fundamentals](../codyssey_b1_1_study/cron-fundamentals.md), [log-rotation](../codyssey_b1_1_study/log-rotation.md)
 - 관련 PR/이슈: 운영진 문의 게시 글 (2026-05-12)
 
