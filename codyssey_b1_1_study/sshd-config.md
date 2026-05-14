@@ -186,9 +186,9 @@ May 12 03:14:15 host sshd: Failed password for postgres from 92.x.x.x port 51234
 
 ```mermaid
 flowchart LR
-    A([설정 파일 수정]) --> B([systemctl reload])
-    B --> C([새 설정 적용 ✅])
-    A -.-> X([옛 설정 그대로 ❌])
+    A(["설정 파일 수정"]) --> B(["systemctl reload"])
+    B --> C(["새 설정 적용 ✅"])
+    A -.-> X(["옛 설정 그대로 ❌"])
 
     linkStyle 2 stroke:#c05a5a,stroke-width:2px,stroke-dasharray:5
 
