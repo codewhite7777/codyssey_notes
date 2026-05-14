@@ -27,15 +27,15 @@
 
 ```mermaid
 graph LR
-    A[👔 운영팀<br/>agent-admin]
-    D[👨‍💻 개발팀<br/>agent-dev]
-    T[🧪 QA팀<br/>agent-test]
+    A["👔 운영팀<br/>agent-admin"]
+    D["👨‍💻 개발팀<br/>agent-dev"]
+    T["🧪 QA팀<br/>agent-test"]
 
-    A -->|소속| CM[🌐 공유 그룹<br/>agent-common<br/>모두 같이 쓰는 공간]
+    A -->|소속| CM["🌐 공유 그룹<br/>agent-common<br/>모두 같이 쓰는 공간"]
     D -->|소속| CM
     T -->|소속| CM
 
-    A -->|소속| CO[🔐 핵심 그룹<br/>agent-core<br/>중요 데이터 접근권]
+    A -->|소속| CO["🔐 핵심 그룹<br/>agent-core<br/>중요 데이터 접근권"]
     D -->|소속| CO
 
     style CM fill:#cce5ff
@@ -148,16 +148,16 @@ uid=1003(agent-test) gid=1003(agent-test) groups=1003(agent-test),1002(agent-com
 
 ```mermaid
 flowchart TD
-    A[setup/03 실행] --> B{그룹 존재?}
-    B -->|예| C[SKIP]
-    B -->|아니오| D[groupadd]
+    A["setup/03 실행"] --> B{그룹 존재?}
+    B -->|예| C["SKIP"]
+    B -->|아니오| D["groupadd"]
     C --> E{사용자 존재?}
     D --> E
-    E -->|예| F[SKIP]
-    E -->|아니오| G[useradd -m -s bash]
-    F --> H[usermod -aG ...<br/>★ -aG라 항상 안전]
+    E -->|예| F["SKIP"]
+    E -->|아니오| G["useradd -m -s bash"]
+    F --> H["usermod -aG ...<br/>★ -aG라 항상 안전"]
     G --> H
-    H --> Z[완료]
+    H --> Z["완료"]
 
     style C fill:#ffe6cc
     style F fill:#ffe6cc
@@ -178,7 +178,7 @@ Linux의 모든 프로세스·파일은 신원을 가진다. 커널 내부에서
 
 ```mermaid
 graph TD
-    P[프로세스 / 파일]
+    P["프로세스 / 파일"]
     P --> R["Real UID/GID<br/>로그인한 실제 사용자"]
     P --> E["Effective UID/GID<br/>★ 권한 검사에 사용<br/>setuid·sudo 시 변경"]
     P --> S["Saved UID/GID<br/>임시 drop/restore"]

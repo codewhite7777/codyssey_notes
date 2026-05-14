@@ -279,12 +279,12 @@ echo "$count"                # 3
 
 ```mermaid
 flowchart LR
-    A[제어 흐름] --> B{무엇?}
+    A["제어 흐름"] --> B{무엇?}
     B -->|두 갈래| C["if [[ ]] then else fi"]
-    B -->|여러 패턴| D[case esac]
-    B -->|리스트 반복| E[for in list]
-    B -->|조건 반복| F[while cond]
-    B -->|재사용| G[함수 + local]
+    B -->|여러 패턴| D["case esac"]
+    B -->|리스트 반복| E["for in list"]
+    B -->|조건 반복| F["while cond"]
+    B -->|재사용| G["함수 + local"]
 
     style C fill:#cce5ff
     style G fill:#ffe6cc

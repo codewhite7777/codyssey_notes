@@ -138,10 +138,10 @@ Filesystem      Size  Used Avail Use% Mounted on
 
 ```mermaid
 flowchart LR
-    A[0~80%] --> B[정상]
-    C[80% 초과] --> D[★ WARNING]
-    E[90% 초과] --> F[위험·즉시 대응]
-    G[100%] --> H[★★ 서비스 깨질 수 있음]
+    A["0~80%"] --> B["정상"]
+    C["80% 초과"] --> D["★ WARNING"]
+    E["90% 초과"] --> F["위험·즉시 대응"]
+    G["100%"] --> H["★★ 서비스 깨질 수 있음"]
 
     style B fill:#ccffcc
     style D fill:#ffe6cc

@@ -170,13 +170,13 @@ CREATED_DIRS+=("/home/agent-admin/agent-app/upload_files")
 
 ```mermaid
 flowchart LR
-    A["trap cleanup EXIT 등록"] --> B[메인 작업]
+    A["trap cleanup EXIT 등록"] --> B["메인 작업"]
     B --> C{어떻게 끝?}
-    C -->|정상 exit 0| D[cleanup 실행]
+    C -->|정상 exit 0| D["cleanup 실행"]
     C -->|에러 set -e| D
     C -->|Ctrl+C SIGINT| D
     C -->|SIGTERM| D
-    D --> E[종료]
+    D --> E["종료"]
 
     style D fill:#ccffcc
     style A fill:#cce5ff

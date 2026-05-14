@@ -200,7 +200,7 @@ flowchart LR
     A["일반 셸 (SSH)"] -->|.bash_profile 읽음| B["AGENT_*<br/>PATH 풍부"]
     B --> C["monitor.sh 실행 성공"]
 
-    D[cron] -->|어느 init도 안 읽음| E["AGENT_* 비어있음<br/>PATH=/usr/bin:/bin"]
+    D["cron"] -->|어느 init도 안 읽음| E["AGENT_* 비어있음<br/>PATH=/usr/bin:/bin"]
     E --> F["★ monitor.sh 실패 가능"]
 
     style C fill:#ccffcc

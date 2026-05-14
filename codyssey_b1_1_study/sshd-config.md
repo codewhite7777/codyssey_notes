@@ -128,10 +128,10 @@ ssh -p 20022 사용자이름@서버주소
 
 ```mermaid
 flowchart LR
-    A[설정 파일 편집] --> B[문법 검증<br/>sshd -t]
-    B --> C[★ 새 SSH 창<br/>미리 열기]
-    C --> D[설정 다시 읽기<br/>reload]
-    D --> E[새 포트 접속<br/>테스트]
+    A["설정 파일 편집"] --> B["문법 검증<br/>sshd -t"]
+    B --> C["★ 새 SSH 창<br/>미리 열기"]
+    C --> D["설정 다시 읽기<br/>reload"]
+    D --> E["새 포트 접속<br/>테스트"]
 
     style C fill:#ffe6cc
     style E fill:#cce5ff

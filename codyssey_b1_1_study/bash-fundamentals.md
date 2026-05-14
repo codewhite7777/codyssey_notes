@@ -189,7 +189,7 @@ echo 'Hello, $NAME'     # Hello, $NAME (작은따옴표 = 그대로)
 
 ```mermaid
 flowchart LR
-    A["FILE='my doc.txt'"] --> B[cat $FILE]
+    A["FILE='my doc.txt'"] --> B["cat $FILE"]
     A --> C["cat \"$FILE\""]
 
     B --> D["★ cat my doc.txt<br/>(2개 인자로 분해)<br/>실패"]

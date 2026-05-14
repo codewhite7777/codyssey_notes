@@ -125,10 +125,10 @@ Mem:           7.7Gi       3.4Gi       2.3Gi       100Mi       2.0Gi       4.0Gi
 
 ```mermaid
 flowchart LR
-    T[전체 메모리] --> U[used<br/>application이 쓰는 중]
-    T --> C[buff/cache<br/>★ 회수 가능]
-    T --> F[진짜 free<br/>거의 0]
-    U --> A1[사용 중<br/>당분간 못 회수]
+    T["전체 메모리"] --> U["used<br/>application이 쓰는 중"]
+    T --> C["buff/cache<br/>★ 회수 가능"]
+    T --> F["진짜 free<br/>거의 0"]
+    U --> A1["사용 중<br/>당분간 못 회수"]
     C --> A2["application 요청 시<br/>즉시 해제 → available 늘어남"]
 
     style C fill:#ffe6cc

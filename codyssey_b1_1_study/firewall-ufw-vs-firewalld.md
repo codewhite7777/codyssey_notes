@@ -130,10 +130,10 @@ sudo ufw status verbose
 
 ```mermaid
 flowchart LR
-    A[설치 확인] --> B[기본 정책<br/>deny in / allow out]
-    B --> C[★ SSH 포트<br/>먼저 허용]
-    C --> D[앱 포트 허용]
-    D --> E[enable]
+    A["설치 확인"] --> B["기본 정책<br/>deny in / allow out"]
+    B --> C["★ SSH 포트<br/>먼저 허용"]
+    C --> D["앱 포트 허용"]
+    D --> E["enable"]
 
     style C fill:#ffe6cc
 ```
@@ -148,9 +148,9 @@ flowchart LR
 
 ```mermaid
 flowchart LR
-    A[외부에서 연결 시도] --> F[방화벽 검사]
-    F -->|허용된 포트| OK[✅ 통과]
-    F -->|허용 안 됨| X[❌ 차단]
+    A["외부에서 연결 시도"] --> F["방화벽 검사"]
+    F -->|허용된 포트| OK["✅ 통과"]
+    F -->|허용 안 됨| X["❌ 차단"]
 
     style OK fill:#ccffcc
     style X fill:#ffcccc
@@ -183,9 +183,9 @@ flowchart LR
 
 ```mermaid
 flowchart LR
-    A[SSH로 원격 접속 중] --> B[방화벽 enable<br/>★ SSH 포트 허용 안 함]
-    B --> C[현재 SSH 세션<br/>즉시 끊김]
-    C --> D[❌ 다시 못 들어감]
+    A["SSH로 원격 접속 중"] --> B["방화벽 enable<br/>★ SSH 포트 허용 안 함"]
+    B --> C["현재 SSH 세션<br/>즉시 끊김"]
+    C --> D["❌ 다시 못 들어감"]
 
     style D fill:#ffcccc
 ```

@@ -143,13 +143,13 @@ ls -lh /var/log/agent-app/
 
 ```mermaid
 flowchart LR
-    A["cron.daily<br/>매일 실행"] --> B[logrotate]
+    A["cron.daily<br/>매일 실행"] --> B["logrotate"]
     B --> C{크기 ≥ 10MB?}
-    C -->|아니오| D[다음 파일로]
-    C -->|예| E[파일 회전 + 압축]
+    C -->|아니오| D["다음 파일로"]
+    C -->|예| E["파일 회전 + 압축"]
     E --> F{회전 파일<br/>10개 초과?}
-    F -->|예| G[가장 오래된 것 삭제]
-    F -->|아니오| H[완료]
+    F -->|예| G["가장 오래된 것 삭제"]
+    F -->|아니오| H["완료"]
     G --> H
 
     style E fill:#cce5ff

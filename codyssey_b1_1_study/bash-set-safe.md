@@ -143,8 +143,8 @@ check 'ss -ltn | grep -q :15034' 'agent 포트 15034'
 
 ```mermaid
 flowchart LR
-    A[명령 실행] --> B{exit code 0?}
-    B -->|예| C[다음 명령]
+    A["명령 실행"] --> B{exit code 0?}
+    B -->|예| C["다음 명령"]
     B -->|아니오| D{if/while/&&/||?}
     D -->|예| C
     D -->|아니오| E["★ 즉시 스크립트 종료"]
@@ -233,7 +233,7 @@ set -euxo pipefail        # x 추가 → trace 모드
 
 ```mermaid
 flowchart LR
-    A[명령 실패] --> B{어느 컨텍스트?}
+    A["명령 실패"] --> B{어느 컨텍스트?}
     B -->|단독 실행| C["✅ set -e 잡음"]
     B -->|if/while 안| D["★ 비활성 (의도)"]
     B -->|&&/||의 일부| D

@@ -131,8 +131,8 @@ ls -la /etc/ssh/sshd_config
 
 ```mermaid
 flowchart LR
-    A[설정·정적] --> B["/etc/<br/>(텍스트 설정)"]
-    C[데이터·동적] --> D["/var/<br/>(자주 바뀌는 파일)"]
+    A["설정·정적"] --> B["/etc/<br/>(텍스트 설정)"]
+    C["데이터·동적"] --> D["/var/<br/>(자주 바뀌는 파일)"]
 
     B --> B1["sshd_config<br/>logrotate 설정"]
     D --> D1["로그, 캐시,<br/>DB 데이터"]

@@ -152,8 +152,8 @@ CPU는 매 순간 다음 중 하나의 상태에 있어요:
 
 ```mermaid
 flowchart LR
-    A[top -b -n 1] --> B[누적 평균<br/>★ 부정확]
-    C[top -b -n 2 -d 0.5] --> D[2번째 측정<br/>= 지난 0.5초 평균<br/>✅ 정확]
+    A["top -b -n 1"] --> B["누적 평균<br/>★ 부정확"]
+    C["top -b -n 2 -d 0.5"] --> D["2번째 측정<br/>= 지난 0.5초 평균<br/>✅ 정확"]
 
     style B fill:#ffe6cc
     style D fill:#ccffcc

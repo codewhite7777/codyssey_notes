@@ -8,15 +8,15 @@
 
 ```mermaid
 flowchart LR
-    A[setup-all.sh] --> B[01~05]
-    B --> C[06-cron.sh]
-    C -->|함정 1| D[Permission denied]
-    C -->|함정 2| E[logrotate WARN]
-    A --> F[verify.sh]
-    F -->|함정 3| G[직접 OK인데 FAIL]
-    A --> H[agent-app 실행]
-    H -->|함정 4| I[파일 이름 불일치]
-    H -->|함정 5| J[GLIBC 부족]
+    A["setup-all.sh"] --> B["01~05"]
+    B --> C["06-cron.sh"]
+    C -->|함정 1| D["Permission denied"]
+    C -->|함정 2| E["logrotate WARN"]
+    A --> F["verify.sh"]
+    F -->|함정 3| G["직접 OK인데 FAIL"]
+    A --> H["agent-app 실행"]
+    H -->|함정 4| I["파일 이름 불일치"]
+    H -->|함정 5| J["GLIBC 부족"]
 
     style D fill:#ffe6cc
     style E fill:#ffe6cc
@@ -84,7 +84,7 @@ trap "rm -f $TMPCRON" EXIT
 
 ```mermaid
 flowchart LR
-    A["/var/log/agent-app/<br/>(2770, group=agent-core)"] --> B[logrotate 회전 시도]
+    A["/var/log/agent-app/<br/>(2770, group=agent-core)"] --> B["logrotate 회전 시도"]
     B -->|"그룹 쓰기 가능 → 보안 거부"| C["★ insecure permissions<br/>error"]
     D["su agent-dev agent-core<br/>지시어 추가"] --> E["✅ 회전 OK"]
 
